@@ -67,7 +67,14 @@ class robot():
         self.cartesian_port = serial.Serial(cartesian_port_name, BAUDRATE, timeout=TIMEOUT)
         self.pipette_port = serial.Serial(pipette_port_name, BAUDRATE, timeout=TIMEOUT)
         self.misc_port = serial.Serial(misc_port_name, BAUDRATE, timeout=TIMEOUT)
-    
+        
+        # Waiting for ports to open
+        time.sleep(1)
+        
+        self.cartesian_port.flushInput()
+        self.pipette_port.flushInput()
+        self.misc_port.flushInput()
+        
     
     def close(self):
         try:
@@ -214,26 +221,19 @@ class robot():
 
         
     def setMagnetsAwayAngle(self, angle):
-        self.data['magnets_away_angle'] = angle
-        self.save()
+        self._setSetting('magnets_away_angle', angle)
     
     
     def setMagnetsNearTubeAngle(self, angle):
-        self.data['magnets_near_tube_angle'] = angle
-        self.save()
+        self._setSetting('magnets_near_tube_angle', angle)
     
     
     def getMagnetsAwayAngle(self):
-        try: 
-            return self.data['magnets_away_angle']
-        except:
-            return 40
+        return self._getSetting('magnets_away_angle')
+        
     
     def getMagnetsNearTubeAngle(self):
-        try:
-            return self.data['magnets_near_tube_angle']
-        except:
-            return 90
+        return self._getSetting('magnets_near_tube_angle')
     
     
     def moveMagnetsAway(self, poweroff=False):
@@ -286,18 +286,31 @@ class robot():
             self.writeAndWaitCartesian('G28 '+axis)
     
     
+    def getSpeed(self, axis):
+        if axis == 'X' or axis == 'Y':
+            speed = 6000
+        elif axis == 'Z':
+            speed = 1000
+        else:
+            print("Wrong axis provided.")
+            return
+        return speed
+    
+    
     def moveAxis(self, axis, dist, speed=None):
-        axis=axis.upper()
-        if speed is None:
-            if axis == 'X' or axis == 'Y':
-                speed = 6000
-            elif axis == 'Z':
-                speed = 1000
-            else:
-                print("Wrong axis provided.")
-                return
+        axis = axis.upper()
+        speed = self.getSpeed(axis)
         self.writeAndWaitCartesian('G0 '+axis+str(dist)+' F'+str(speed))
+    
+
+    def moveAxisDelta(self, axis, dist, speed=None):
+        axis = axis.upper()
+        speed = self.getSpeed(axis)
         
+        pos = self.getPosition(axis=axis)
+        new_pos = pos + dist
+        self.writeAndWaitCartesian('G0 '+axis+str(new_pos)+' F'+str(speed))
+    
 
     def getPosition(self, axis=None):
         msg = self.writeAndWaitCartesian("M114")
@@ -322,13 +335,89 @@ class robot():
             return x, y, z
 
         
-    def moveDownUntilPress(self, step, threshold):
+    def moveDownUntilPress(self, step, threshold, z_max=180):
         self.tareAll()
         z = self.getPosition(axis='Z')
-        while (self.getCombinedLoad()) < threshold:
+        z_init = z
+        while ((self.getCombinedLoad()) < threshold) and (self.getPosition(axis='Z') < z_max):
             z += step
             self.moveAxis('Z', z)
         return self.getPosition(axis='Z')
+        
+
+
+# ==============================================================================
+# Positioning routine
+
+    
+    def setPositioningParameters(self, step_list=[1, 0.2], z_increment=0.1, 
+                                 z_retract=-1, z_max_travel=3, z_threshold=500):
+        self._setSetting('stair_finding_step_list', step_list)
+        self._setSetting('stair_finding_z_increment', z_increment)
+        self._setSetting('stair_finding_z_retract_after_trigger', z_retract)
+        self._setSetting('stair_finding_z_max_travel', z_max_travel)
+        self._setSetting('stair_finding_z_load_threshold', z_threshold)
+    
+    
+    def getPositioningParameters(self):
+        step_list = self._getSetting('stair_finding_step_list')
+        z_increment = self._getSetting('stair_finding_z_increment')
+        z_retract = self._getSetting('stair_finding_z_retract_after_trigger')
+        z_max_travel = self._getSetting('stair_finding_z_max_travel')
+        z_threshold = self._getSetting('stair_finding_z_load_threshold')
+        return step_list, z_increment, z_retract, z_max_travel, z_threshold
+
+
+    def scanForStair(self, axis, step, direction):
+        """
+        Detects abrupt drop in height (like a hole for a tube)
+        """
+        step_list, z_increment, z_retract, z_max_travel, z_threshold = self.getPositioningParameters()
+        
+        initial_z = self.moveDownUntilPress(step=z_increment, threshold=z_threshold)
+        z_trigger = initial_z
+        while abs(initial_z - z_trigger) < z_max_travel:
+            self.moveAxisDelta('Z', z_retract)
+            self.moveAxisDelta(axis, step*direction)
+            z_trigger = self.moveDownUntilPress(step=z_increment, 
+                            threshold=z_threshold, z_max=initial_z+5)
+            #print (z_trigger, abs(initial_z - z_trigger), z_max_travel)
+        stair_coord = self.getPosition(axis=axis)
+        return stair_coord
+
+    
+    def scanForStairFine(self, axis, direction):
+        
+        step_list, z_increment, z_retract, z_max_travel, z_threshold = self.getPositioningParameters()
+        
+        initial_z = self.moveDownUntilPress(step=z_increment, threshold=z_threshold)
+        self.moveAxisDelta('Z', z_retract)
+        
+        for step in step_list:
+            z_start = self.getPosition(axis="Z")
+            coord = self.scanForStair(axis=axis, step=step, direction=direction)
+            # Preparing to detect a stair with finer step
+            # Moving up to initial height
+            self.moveAxis('Z', z_start)
+            # Moving one step back
+            self.moveAxisDelta(axis, -step*direction)
+        return coord
+        
+    
+    def findCenterInner(self, axis, distance):
+        """
+        Find an exact center of a hole. The pipette is expected to be approximately in
+        the middle of the hole
+        """
+        approx_center = self.getPosition(axis=axis)
+        edge_1_approx = approx_center - distance/2.0
+        edge_2_approx = approx_center + distance/2.0
+        self.moveAxis(axis, edge_1_approx)
+        edge_1 = self.scanForStairFine(axis, direction=1)
+        self.moveAxid(axis, edge_2_approx)
+        edge_2 = self.scanForStairFine(axis, direction=-1)
+        center = (edge_1 + edge_2)/2.0
+        return center
         
         
         
@@ -349,6 +438,20 @@ class robot():
     def showData(self):
         return self.data
     
+    
+    def _getSetting(self, name):
+        try:
+            value = self.data[name]
+        except:
+            print ("Error: setting ", name, " is not specified.")
+            print ("Use _setSetting('setting_name', value) to specify it.")
+            print ("Alternatively, do self.data['setting_name']=value to set it temporary.")
+            return
+        return value
+    
+    def _setSetting(self, name, value):
+        self.data[name] = value
+        self.save()
     
     def save(self):
         f = open(self.name+'.json', 'w')

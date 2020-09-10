@@ -1,1 +1,1 @@
-{"magnets_away_angle": 40, "magnets_near_tube_angle": 93}
+{"magnets_away_angle": 40, "magnets_near_tube_angle": 93, "stair_finding_step_list": [1, 0.2], "stair_finding_z_increment": 0.1, "stair_finding_z_retract_after_trigger": -1, "stair_finding_z_max_travel": 3, "stair_finding_z_load_threshold": 500, "z_max": 180, "x_max": 189, "y_max": 322}
