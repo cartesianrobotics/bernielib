@@ -6,6 +6,9 @@ import sys
 import json
 
 
+#TODO: Tip end correction
+
+
 """
 Low level communication library with a device connected through serial port.
 
@@ -140,6 +143,26 @@ class robot():
     def writeAndWaitMisc(self, expression):
         return self._writeAndWait(port=self.misc_port, expression=expression, eol='', confirm_message='\r\n')
 
+
+    def _getRackObjectByName(self, rack_name):
+        """
+        Returns rack object using its name. Possible rack values: 'samples', 'waste', 'tips', 'reagents'.
+        """
+        # getting a rack object
+        if rack_name == 'samples':
+            r = self.samples_rack
+        elif rack_name == 'waste':
+            r = self.waste_rack
+        elif rack_name == 'tips':
+            r = self.tips_rack
+        elif rack_name == 'reagents':
+            r = self.reagents_rack
+        else:
+            print ("Please provide valid rack value")
+            print ("Possible values: 'samples', 'waste', 'tips', 'reagents'.")
+            return
+        return r
+
     
 # ==========================================================================================
 # Pipette functions
@@ -176,6 +199,7 @@ class robot():
     
     def pipetteHome(self):
         self.writeAndWaitPipette('$H')
+        self.pipetteServoUp()
         
     
     def pipetteUnlock(self):
@@ -193,6 +217,22 @@ class robot():
     
     def pipetteServoDown(self):
         self.writeAndWaitPipette('M5')
+    
+    
+    def setTipLength(self, length):
+        """
+        Specifies added length of the tip, when it is attached to the pipettor
+        """
+        self._setSetting('added_tip_length', length)
+    
+    
+    def getTipLength(self):
+        """
+        Returns the length of the tip. 
+        This is how much longer the pipette become after attaching a tip.
+        """
+        return self._getSetting('added_tip_length')
+    
     
 # ================================================================================
 # Load cells (pressure sensors) functions
@@ -435,6 +475,37 @@ class robot():
             self.moveAxis('Z', z)
         return self.getPosition(axis='Z')
         
+    
+    # TODO: include correction for a tip
+    def moveToWell(self, rack_name, column, row, save_height=20):
+        """
+        Moves the robot to the specified well in the rack.
+        Inputs:
+            rack_name
+                Name of the rack. Following names are allowed: 'samples', 'waste', 'tips', 'reagents'.
+            column, row
+                Position of the well using column and row number (not an x, y coordinates).
+                For example, to get to the 96th well of a 96-well plate, specify column=11, row=7.
+            save_height
+                Height at which robot will not hit anything. 
+                Specified relative to the rack top, which is obtained by the command rack.getZ()
+                For example, value 20 (default) means that the robot will stop 20 mm above the rack.
+        """
+        # Current Z position
+        z = self.getPosition(axis='Z')
+        # Getting rack object
+        r = self._getRackObjectByName(rack_name)
+        # Rack top value
+        z_top = r.getZ()
+        z_safe = z_top - save_height
+        # Checking whether I need to raise Z axis before movement
+        if z > z_safe:
+            self.moveAxis(axis='Z', dist=z_safe)
+        # Obtaining well coordinates
+        x, y = r.calcWellXY(column=column, row=row)
+        # Moving towards the well
+        self.move(x=x, y=y, z=z_safe, z_first=False)
+        return self.getPosition()
 
 
 # ==============================================================================
@@ -497,6 +568,7 @@ class robot():
         return coord
         
     
+    # TODO: remove this function
     def findCenter(self, axis, distance, how='inner'):
         """
         Find an exact center of a hole. The pipette is expected to be approximately in
@@ -535,30 +607,11 @@ class robot():
         center = (edge_1 + edge_2)/2.0
         return center
 
-        
-    def calibrateRack(self, rack):
+
+    def _findCenterXY(self, x1, x2, y1, y2, how):
         """
-        Calibrates a selected rack. Possible rack values: 'samples', 'waste', 'tips', 'reagents'.
+        Using coordinates of the object edge, find a center of this object
         """
-        # getting a rack object
-        if rack == 'samples':
-            r = self.samples_rack
-        elif rack == 'waste':
-            r = self.waste_rack
-        elif rack == 'tips':
-            r = self.tips_rack
-        elif rack == 'reagents':
-            r = self.reagents_rack
-        else:
-            print ("Please provide valid rack value")
-            print ("Possible values: 'samples', 'waste', 'tips', 'reagents'.")
-            return
-        
-        # Obtaining calibration parameters
-        (x1, x2, y1, y2, how)= r.getInitialCalibrationXY()
-        lift_z = r.getCalibrationLiftZ()
-        
-        
         if how == 'inner':
             direction = 1
         elif how == 'well':
@@ -589,6 +642,23 @@ class robot():
         x_center = (x_edge_1 + x_edge_2) / 2.0
         y_center = (y_edge_1 + y_edge_2) / 2.0
         
+        return x_center, y_center
+        
+        
+    def calibrateRack(self, rack):
+        """
+        Calibrates a selected rack. Possible rack values: 'samples', 'waste', 'tips', 'reagents'.
+        """
+        
+        r = self._getRackObjectByName(rack_name=rack)
+        
+        # Obtaining calibration parameters
+        (x1, x2, y1, y2, how)= r.getInitialCalibrationXY()
+        lift_z = r.getCalibrationLiftZ()
+        
+        # Finding object center
+        x_center, y_center = self._findCenterXY(x1, x2, y1, y2, how)
+        
         # Depends on whether robot found a center of the rack, or a center of the well, 
         # the center of the rack is calculated and saved.
         if how == 'inner' or how == 'outer':
@@ -609,7 +679,8 @@ class robot():
         self.moveAxisDelta('Z', -5)
         
         return x_center, y_center, z
-        
+
+    
         
 # ==============================================================================
 # Settings storage and manipulations
@@ -733,7 +804,7 @@ class rack():
         """
         self._setSetting('detected_z', z)
         
-    def getZ(self, z):
+    def getZ(self):
         """
         Returns Z value at which the pipette without a tip would touch the rack, triggering load cells.
         """
