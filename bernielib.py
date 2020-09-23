@@ -64,6 +64,13 @@ class robot():
         
         self.loadData()
         
+        # Initializing racks for the robot
+        self.samples_rack = rack('samples')
+        self.waste_rack = rack('waste')
+        self.tips_rack = rack('tips')
+        self.reagents_rack = rack('reagents')
+        
+        # Opening communications
         self.cartesian_port = serial.Serial(cartesian_port_name, BAUDRATE, timeout=TIMEOUT)
         self.pipette_port = serial.Serial(pipette_port_name, BAUDRATE, timeout=TIMEOUT)
         self.misc_port = serial.Serial(misc_port_name, BAUDRATE, timeout=TIMEOUT)
@@ -89,6 +96,8 @@ class robot():
             self.misc_port.close()
         except:
             pass
+    
+    
     
     
     def _readAll(self, port):
@@ -277,12 +286,14 @@ class robot():
             
     
     def robotHome(self, axis=None):
+        try:
+            axis = axis.upper()
+        except:
+            pass
         if axis is None:
             self.writeAndWaitCartesian('G28 Z')
-            self.writeAndWaitCartesian('G28 X')
-            self.writeAndWaitCartesian('G28 Y')
+            self.writeAndWaitCartesian('G28 XY')
         else:
-            axis=axis.upper()
             self.writeAndWaitCartesian('G28 '+axis)
     
     
@@ -295,6 +306,86 @@ class robot():
             print("Wrong axis provided.")
             return
         return speed
+    
+
+    def moveXY(self, x, y, speed=None):
+        """
+        Moves axes X and Y simultaneously. 
+        Generates G-code for moving of the type: G0 X<value> Y<value> F<value>
+        Passes G-code to 
+        low_level_comm.writeAndWait() function (will wait for operation to complete)
+        
+        Inputs:
+            x, y
+                Final coordinate values in mm
+            speed
+                Moving speed for X an Y axes. Both will be moving with the same speed.
+                Speed is measured in arbitrary units.
+        """
+        if speed == None:
+            speed = self.getSpeed('X')
+        full_cmd = 'G0 X' + str(x) + ' Y' + str(y) + ' F' + str(speed)
+        try:
+            self.writeAndWaitCartesian(full_cmd)
+        except:
+            print ("Movement failed. The following command was sent:")
+            print (full_cmd)
+            return
+
+
+    def move(self, x=None, y=None, z=None, z_first=True, speed_xy=None, speed_z=None):
+        """
+        Move robot to a new position with given absolute coordinates.
+        
+            Inputs
+                x, y, z
+                    final coordinates to which to move the robot;
+                    values in mm from homing position.
+                    You can provide any of x, y or z, or all of them.
+                    If both x and y provided, robot will move them simultaneously.
+                z_first
+                    if True and z value provided, will move Z coordinate first, 
+                    then X and Y. Otherwise, will start from X and Y and then Z.
+                    Default is True.
+                speed_xy
+                    Speed at which to move X and Y coordinates.
+                    If not provided, library default values from arnie.speed will be used.
+                speed_z
+                    Speed at which to move Z coordinate.
+                    If not provided, library default values from arnie.speed will be used.
+        """
+        
+        if speed_xy == None:
+            speed_xy = self.getSpeed('X')
+        if speed_z == None:
+            speed_z = self.getSpeed('Z')
+        
+        
+        # Each of the functions attempting to move an axis to the coordinate. 
+        # If something goes wrong, like coordinate not specified, command is ignored
+        # and the next one is attempted.
+        if z_first:
+            if z is not None:
+                self.moveAxis('Z', z, speed_z)
+            # If both X and Y should be moved, I need to call moveXY(), one which would move
+            # those axes simultaneously
+            if x is not None and y is not None:
+                self.moveXY(x=x, y=y, speed=speed_xy)
+            elif x is not None:
+                self.moveAxis('X', x, speed_xy)
+            elif y is not None:
+                self.moveAxis('Y', y, speed_xy)
+        else:
+            # If both X and Y should be moved, I need to call moveXY(), one which would move
+            # those axes simultaneously
+            if x is not None and y is not None:
+                self.moveXY(x=x, y=y, speed=speed_xy)
+            elif x is not None:
+                self.moveAxis('X', x, speed_xy)
+            elif y is not None:
+                self.moveAxis('Y', y, speed_xy)
+            if z is not None:
+                self.moveAxis('Z', z, speed_z)
     
     
     def moveAxis(self, axis, dist, speed=None):
@@ -368,19 +459,21 @@ class robot():
         return step_list, z_increment, z_retract, z_max_travel, z_threshold
 
 
-    def scanForStair(self, axis, step, direction):
+    def scanForStair(self, axis, step, direction, depth=5):
         """
         Detects abrupt drop in height (like a hole for a tube)
         """
         step_list, z_increment, z_retract, z_max_travel, z_threshold = self.getPositioningParameters()
         
-        initial_z = self.moveDownUntilPress(step=z_increment, threshold=z_threshold)
+        initial_z = self.getPosition(axis='Z')
+        #initial_z = self.moveDownUntilPress(step=z_increment, threshold=z_threshold)
         z_trigger = initial_z
         while abs(initial_z - z_trigger) < z_max_travel:
-            self.moveAxisDelta('Z', z_retract)
+            self.moveAxis('Z', initial_z)
+            #self.moveAxisDelta('Z', z_retract)
             self.moveAxisDelta(axis, step*direction)
             z_trigger = self.moveDownUntilPress(step=z_increment, 
-                            threshold=z_threshold, z_max=initial_z+5)
+                            threshold=z_threshold, z_max=initial_z+depth)
             #print (z_trigger, abs(initial_z - z_trigger), z_max_travel)
         stair_coord = self.getPosition(axis=axis)
         return stair_coord
@@ -404,21 +497,118 @@ class robot():
         return coord
         
     
-    def findCenterInner(self, axis, distance):
+    def findCenter(self, axis, distance, how='inner'):
         """
         Find an exact center of a hole. The pipette is expected to be approximately in
-        the middle of the hole
+        the middle of the object.
+        
+        Inputs:
+            axis
+                'X' or 'Y', represents the axis for which to find a middle of the object
+            distance
+                Distance across the object, such as the diameter of the hole, or 
+                measurement of the object
+            how
+                Values may be 'inner' or 'outer'. 'inner' is used in case if feature is a hole, such
+                as a tube hole in a rack. 'outer' is used when one need to measure a solid object,
+                such as a rack itself, or a capped tube.
+                
         """
+        if how == 'inner':
+            direction = 1
+        elif how == 'outer':
+            direction = -1
+        else:
+            print ("Please specify a valid method for finding a center.")
+            print ("If you want to find a center of a hole, please use how='inner' (default value) ")
+            print ("If you want to find a center of a solid object, such as a rack, please use how='outer'")
+            print ("You specified a value how=", how)
+            return
+        
         approx_center = self.getPosition(axis=axis)
         edge_1_approx = approx_center - distance/2.0
         edge_2_approx = approx_center + distance/2.0
         self.moveAxis(axis, edge_1_approx)
-        edge_1 = self.scanForStairFine(axis, direction=1)
-        self.moveAxid(axis, edge_2_approx)
-        edge_2 = self.scanForStairFine(axis, direction=-1)
+        edge_1 = self.scanForStairFine(axis, direction=direction)
+        self.moveAxis(axis, edge_2_approx)
+        edge_2 = self.scanForStairFine(axis, direction=-direction)
         center = (edge_1 + edge_2)/2.0
         return center
+
         
+    def calibrateRack(self, rack):
+        """
+        Calibrates a selected rack. Possible rack values: 'samples', 'waste', 'tips', 'reagents'.
+        """
+        # getting a rack object
+        if rack == 'samples':
+            r = self.samples_rack
+        elif rack == 'waste':
+            r = self.waste_rack
+        elif rack == 'tips':
+            r = self.tips_rack
+        elif rack == 'reagents':
+            r = self.reagents_rack
+        else:
+            print ("Please provide valid rack value")
+            print ("Possible values: 'samples', 'waste', 'tips', 'reagents'.")
+            return
+        
+        # Obtaining calibration parameters
+        (x1, x2, y1, y2, how)= r.getInitialCalibrationXY()
+        lift_z = r.getCalibrationLiftZ()
+        
+        
+        if how == 'inner':
+            direction = 1
+        elif how == 'well':
+            direction = 1
+        elif how == 'outer':
+            direction = -1
+        else:
+            print ("Please specify a valid method for finding a center.")
+            print ("If you want to find a center of a hole, please use how='inner' (default value) ")
+            print ("If you want to find a center of a solid object, such as a rack, please use how='outer'")
+            print ("You specified a value how=", how)
+            return
+            
+        # Moving towards the rack
+        self.moveAxis(axis='Z', dist=0) # Moving Z to 0 so I don't hit anything
+        self.move(x1[0], x1[1], x1[2], z_first=False)
+        x_edge_1 = self.scanForStairFine('X', direction=direction)
+        self.moveAxisDelta('Z', lift_z)
+        self.move(x2[0], x2[1], x2[2], z_first=False)
+        x_edge_2 = self.scanForStairFine('X', direction=-direction)
+        self.moveAxisDelta('Z', lift_z)
+        self.move(y1[0], y1[1], y1[2], z_first=False)
+        y_edge_1 = self.scanForStairFine('Y', direction=direction)
+        self.moveAxisDelta('Z', lift_z)
+        self.move(y2[0], y2[1], y2[2], z_first=False)
+        y_edge_2 = self.scanForStairFine('Y', direction=-direction)
+        
+        x_center = (x_edge_1 + x_edge_2) / 2.0
+        y_center = (y_edge_1 + y_edge_2) / 2.0
+        
+        # Depends on whether robot found a center of the rack, or a center of the well, 
+        # the center of the rack is calculated and saved.
+        if how == 'inner' or how == 'outer':
+            r.setCenterXY(x=x_center, y=y_center)
+        elif how == 'well':
+            r.calcCenterFromWellXY(x=x_center, y=y_center)
+        
+        x_for_z_calibr, y_for_z_calibr = r.getZCalibrationXY(which='absolute')
+        
+        self.moveAxisDelta('Z', lift_z)
+        self.move(x_for_z_calibr, y_for_z_calibr, x1[2], z_first=False)
+        initial_z = self.getPosition(axis='Z')
+        step_list, z_increment, z_retract, z_max_travel, z_threshold = self.getPositioningParameters()
+        depth = 5
+        z = self.moveDownUntilPress(step=z_increment, 
+                            threshold=z_threshold, z_max=initial_z+depth)
+        r.setZ(z)
+        self.moveAxisDelta('Z', -5)
+        
+        return x_center, y_center, z
         
         
 # ==============================================================================
@@ -457,3 +647,272 @@ class robot():
         f = open(self.name+'.json', 'w')
         f.write(json.dumps(self.data))
         f.close()
+        
+        
+
+class rack():
+    """
+    Handles a rack info and functions
+    """
+    
+    def __init__(self, name):
+        self.name = name
+        self.loadData()
+        
+        # Dictionary storing sample objects
+        # {sample_object: (x_n, y_n)}
+        # x_n, y_n - position (well) in the rack
+        self.samples_dict = {}
+    
+    
+    def _getSetting(self, name):
+        try:
+            value = self.data[name]
+        except:
+            print ("Error: setting ", name, " is not specified.")
+            print ("Use _setSetting('setting_name', value) to specify it.")
+            print ("Alternatively, do self.data['setting_name']=value to set it temporary.")
+            return
+        return value
+    
+    
+    def _setSetting(self, name, value):
+        self.data[name] = value
+        self.save()
+    
+    
+    def loadData(self, path=None):
+        if path is None:
+            path=self.name+'.json'
+        try:
+            f = open(path, 'r')
+            self.data = json.loads(f.read())
+            f.close()
+        except FileNotFoundError:
+            self.data = {}
+    
+    def save(self):
+        f = open(self.name+'.json', 'w')
+        f.write(json.dumps(self.data))
+        f.close()
+            
+    def setSlot(self, slot_id):
+        self._setSetting('slot_id', slot_id)
+        
+    def getSlot(self):
+        self._getSetting('slot_id')
+        
+    def setCenterXY(self, x=None, y=None):
+        """
+        Sets rack center; x and y.
+        """
+        if x is not None:
+            self._setSetting('center_x', x)
+        if y is not None:
+            self._setSetting('center_y', y)
+            
+    def getCenterXY(self):
+        return self._getSetting('center_x'), self._getSetting('center_y')
+        
+    def setCalibrationZ(self, z):
+        """
+        Sets absolute Z value at which calibration starts for the rack
+        """
+        self._setSetting('calibration_Z', z)
+        
+    def getCalibrationZ(self):
+        """
+        Returns absolute Z value at which calibration shall start
+        """
+        return self._getSetting('calibration_Z')
+        
+    def setZ(self, z):
+        """
+        Sets the value at which pipette without a tip touches the top of the rack,
+        detected by the load cells.
+        """
+        self._setSetting('detected_z', z)
+        
+    def getZ(self, z):
+        """
+        Returns Z value at which the pipette without a tip would touch the rack, triggering load cells.
+        """
+        return self._getSetting('detected_z')
+        
+    def setRackSize(self, x, y, z):
+        """
+        Specifies rack dimensions in mm. Z value is the height of the rack from the floor.
+        """
+        self._setSetting('max_x', x)
+        self._setSetting('max_y', y)
+        self._setSetting('max_z', z)
+        
+    def getRackSize(self):
+        """
+        Returns rack dimensions in mm.
+        """
+        return self._getSetting('max_x'), self._getSetting('max_y'), self._getSetting('max_z')
+    
+    
+    def setCalibrationStyle(self, style, well_x=0, well_y=0):
+        self._setSetting('calibration_style', style)
+        self._setSetting('x_well_to_calibrate', well_x)
+        self._setSetting('y_well_to_calibrate', well_y)
+    
+    
+    def getCalibrationStyle(self, well=None):
+        if well is None:
+            return self._getSetting('calibration_style')
+        else:
+            calib_style = self._getSetting('calibration_style')
+            x_well = self._getSetting('x_well_to_calibrate')
+            y_well = self._getSetting('y_well_to_calibrate')
+            return calib_style, x_well, y_well
+            
+    
+    
+    def setWells(self, wells_x, wells_y, x_dist_center_to_well_00, y_dist_center_to_well_00, well_diam,
+                 dist_between_cols, dist_between_rows):
+        """
+        Specifies number of wells in the rack and their position relative to the center
+        """
+        self._setSetting('wells_x', wells_x)
+        self._setSetting('wells_y', wells_y)
+        self._setSetting('x_dist_center_to_well_00', x_dist_center_to_well_00)
+        self._setSetting('y_dist_center_to_well_00', y_dist_center_to_well_00)
+        self._setSetting('well_diam', well_diam)
+        self._setSetting('dist_between_cols', dist_between_cols)
+        self._setSetting('dist_between_rows', dist_between_rows)
+    
+    def getWellsParams(self):
+        x = self._getSetting('x_dist_center_to_well_00')
+        y = self._getSetting('y_dist_center_to_well_00')
+        columns = self._getSetting('wells_x')
+        rows = self._getSetting('wells_y')
+        well_diam = self._getSetting('well_diam')
+        dist_between_cols = self._getSetting('dist_between_cols')
+        dist_between_rows = self._getSetting('dist_between_rows')
+        return x, y, columns, rows, well_diam, dist_between_cols, dist_between_rows
+    
+    def getWellDiameter(self):
+        return self._getSetting('well_diam')
+    
+    
+    def calcWellsXY(self):
+        x_rack_center, y_rack_center = self.getCenterXY()
+        x_well_0_rel, y_well_0_rel, columns, rows, well_diam, dist_between_cols, dist_between_rows = self.getWellsParams()
+        
+        x_well_0 = x_rack_center - x_well_0_rel
+        y_well_0 = y_rack_center - y_well_0_rel
+        
+        coord_list = []
+        coord_added_x = 0
+        
+        for i in range(columns):
+            coord_i = x_well_0 + coord_added_x
+            coord_added_x += dist_between_cols
+            
+            coord_list_y = []
+            coord_added_y = 0
+            for j in range(rows):
+                coord_j = y_well_0 + coord_added_y
+                coord_list_y.append((coord_i, coord_j))
+                coord_added_y += dist_between_rows
+            coord_list.append(coord_list_y)
+        
+        return coord_list
+    
+    
+    def calcWellXY(self, column, row):
+        coord_list = self.calcWellsXY()
+        return coord_list[column][row][0], coord_list[column][row][1]
+    
+    
+    def getInitialCalibrationXY(self):
+        style = self.getCalibrationStyle()
+        if style=='outer' or style == 'inner':
+            # This case happens if the rack is to be calibrated from outside (like samples rack), or 
+            # using a large hole inside (like the tip rack or waste rack).
+            x, y = self.getCenterXY() # X and Y coordinates of the center of the rack
+            # X, Y, Z dimensions of the rack
+            max_x, max_y, max_z = self.getRackSize()
+            # Calculating edges of the rack
+            x_edge_1 = x - max_x/2.0
+            x_edge_2 = x + max_x/2.0
+            y_edge_1 = y - max_y/2.0
+            y_edge_2 = y + max_y/2.0
+        elif style=='well':
+            style, column, row = self.getCalibrationStyle(well=True)
+            x, y = self.calcWellXY(column, row)
+            well_diam = self.getWellDiameter()
+            # Calculating edges of the well that will be used for calibration
+            x_edge_1 = x - well_diam/2.0
+            x_edge_2 = x + well_diam/2.0
+            y_edge_1 = y - well_diam/2.0
+            y_edge_2 = y + well_diam/2.0
+        else:
+            print("Provided calibration style is not supported.")
+            print("Please use 'outer', 'inner' or 'well' styles.")
+            print("Current provided style is: ", style)
+        # Z coordinate at which calibration is started
+        z = self.getCalibrationZ()
+        # Formatting the calibration points coordinates. All in the form of (x, y, z)
+        p1 = (x_edge_1, y, z)
+        p2 = (x_edge_2, y, z)
+        p3 = (x, y_edge_1, z)
+        p4 = (x, y_edge_2, z)
+        return p1, p2, p3, p4, style
+        
+    def calcCenterFromWellXY(self, x, y, column=None, row=None):
+        if column is None or row is None:
+            style, column, row = self.getCalibrationStyle(well=True)
+        
+        x_well_0_rel, y_well_0_rel, columns, rows, well_diam, dist_between_cols, dist_between_rows = self.getWellsParams()
+        
+        x_cntr_abs = x - dist_between_cols * column + x_well_0_rel
+        y_cntr_abs = y - dist_between_rows * row + y_well_0_rel
+        
+        self.setCenterXY(x=x_cntr_abs, y=y_cntr_abs)
+
+    def setCalibrationLiftZ(self, z):
+        """
+        Height for which to lift Z axis during calibration
+        """
+        self._setSetting('calibration_lift_z', z)
+    
+    def getCalibrationLiftZ(self):
+        """
+        Returns the height at which to leave the pipette during calibration (so it does not hit anything)
+        """
+        return self._getSetting('calibration_lift_z')
+        
+    def setZCalibrationXY(self, x=0, y=0):
+        """
+        Defines coordinates (relative to the rack center) at which to perform calibration of the rack height
+        """
+            
+        self._setSetting('x_coord_for_z_calibration', x)
+        self._setSetting('y_coord_for_z_calibration', y)
+    
+    def getZCalibrationXY(self, which='relative'):
+        """
+        Returns x and y coordinates of the point at which Z of the rack needs to be calibrated.
+        Coordinates are relative to the center of the rack.
+        """
+        
+        x_rel = self._getSetting('x_coord_for_z_calibration')
+        y_rel = self._getSetting('y_coord_for_z_calibration')
+        
+        if which == 'relative':
+            return x_rel, y_rel
+        elif which == 'absolute':
+            x_cntr, y_cntr = self.getCenterXY()
+            x_abs = x_cntr + x_rel
+            y_abs = y_cntr + y_rel
+            return x_abs, y_abs
+        else:
+            print ('Please specify type of the coordinate you need.')
+            print ("which='relative' will give coordinates relative to the rack center;")
+            print ("which='absolute' will give absolute coordinates.")
+            return
+        
