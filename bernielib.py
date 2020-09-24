@@ -85,6 +85,9 @@ class robot():
         self.pipette_port.flushInput()
         self.misc_port.flushInput()
         
+        # Starting with tip not attached
+        self.tip_attached = 0 # 0 - not attached, 1 - attached
+        
     
     def close(self):
         try:
@@ -232,6 +235,25 @@ class robot():
         This is how much longer the pipette become after attaching a tip.
         """
         return self._getSetting('added_tip_length')
+    
+    
+    def pickUpTip(self, column, row, fine_approach_dz=10, raise_z=0, raise_dz_with_tip=60):
+        # Moving towards the tip
+        self.moveToWell(rack_name='tips', column=column, row=row, save_height=fine_approach_dz)
+        # Moving down while controlling the pressure
+        self.moveDownUntilPress(1, 4000)
+        # Moving up with the tip
+        self.moveAxisDelta('Z', -raise_dz_with_tip)
+        self.tip_attached = 1
+    
+    
+    def dumpTip(self):
+        self.pipetteServoDown()
+        self.pipetteMove(40)
+        self.tip_attached = 0
+        self.pipetteMove(1)
+        self.pipetteServoUp()
+        
     
     
 # ================================================================================
