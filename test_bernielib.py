@@ -80,5 +80,6 @@ class bernielib_test_case(unittest.TestCase):
     
         ber.writeAndWaitCartesian.assert_called_with("G0 X90 F6000")
 
+
 if __name__ == '__main__':
     unittest.main()

@@ -70,7 +70,7 @@ class robot():
         # Initializing racks for the robot
         self.samples_rack = rack('samples')
         self.waste_rack = rack('waste')
-        self.tips_rack = rack('tips')
+        self.tips_rack = consumable('tips')
         self.reagents_rack = rack('reagents')
         
         # Opening communications
@@ -87,6 +87,8 @@ class robot():
         
         # Starting with tip not attached
         self.tip_attached = 0 # 0 - not attached, 1 - attached
+        # Tuple that let robot remember where did it picked up its last tip
+        self.last_tip_coord = None
         
     
     def close(self):
@@ -245,6 +247,8 @@ class robot():
         # Moving up with the tip
         self.moveAxisDelta('Z', -raise_dz_with_tip)
         self.tip_attached = 1
+        # Letting the rack know that the tip was picked from there
+        self.tips_rack.consume(column, row)
     
     
     def dumpTip(self):
@@ -264,13 +268,19 @@ class robot():
         self.moveToWell('tips', column, row)
         self.moveAxisDelta('Z', 40) # Moving deeper into the tip well, so the tip does not miss
         self.dumpTip()
+        self.tips_rack.add(column, row) # Letting tip rack know that there is a new tip there.
         self.moveToWell('tips', column, row)
     
     
     def _calcExtraLength(self):
         return self.getTipLength() * self.tip_attached
     
-    
+
+    def pickUpNextTip(self):
+        col, row = self.tips_rack.next()
+        self.pickUpTip(col, row)
+        self.last_tip_coord = (col, row)
+
     
 # ================================================================================
 # Load cells (pressure sensors) functions
@@ -514,7 +524,6 @@ class robot():
         return self.getPosition(axis='Z')
         
     
-    # TODO: include correction for a tip
     def moveToWell(self, rack_name, column, row, save_height=20):
         """
         Moves the robot to the specified well in the rack.
@@ -920,6 +929,12 @@ class rack():
         return self._getSetting('well_diam')
     
     
+    def getRackColRow(self):
+        """
+        Returns how many columns and rows the rack has.
+        """
+        return self._getSetting('wells_x'), self._getSetting('wells_y')
+    
     def calcWellsXY(self):
         x_rack_center, y_rack_center = self.getCenterXY()
         x_well_0_rel, y_well_0_rel, columns, rows, well_diam, dist_between_cols, dist_between_rows = self.getWellsParams()
@@ -1038,3 +1053,62 @@ class rack():
             print ("which='absolute' will give absolute coordinates.")
             return
         
+
+
+class consumable(rack):
+    """
+    Handles rack of consumables (such as a rack of tips).
+    """
+    
+    def refill(self):
+        """
+        Marks all possible wells of the consumable as "full", or "ready to use".
+        For example, if this is a rack of tips, fills it with tips.
+        Call when you replace the rack with a new tips
+        """
+        
+        cols, rows = self.getRackColRow()
+        unused_consumable_list = []
+        for i in range(cols):
+            for j in range(rows):
+                unused_consumable_list.append((i, j))
+        self._setSetting('unused_consumable_list', unused_consumable_list)
+
+    
+    def _getReadyList(self):
+        """
+        Returns list of consumables ready to use
+        """
+        return self._getSetting('unused_consumable_list')
+    
+    
+    def consume(self, col, row):
+        """
+        Removes an item from the list of ready consumables.
+        Happens, for instance, when the tip is picked up.
+        """
+        unused_consumable_list = self._getReadyList()
+        try:
+            unused_consumable_list.remove((col, row))
+        except:
+            pass
+        self._setSetting('unused_consumable_list', unused_consumable_list)
+        
+    def add(self, col, row):
+        """
+        Adds a consumable to the list of ready consumables.
+        Use when you command a robot to place a tip back into the rack
+        """
+        unused_consumable_list = self._getReadyList()
+        unused_consumable_list.append((col, row))
+        self._setSetting('unused_consumable_list', unused_consumable_list)
+        
+    def next(self, consume=True):
+        """
+        Returns column and row of a next available consumable item.
+        """
+        unused_consumable_list = self._getReadyList()
+        col, row = unused_consumable_list[0]
+        if consume:
+            self.consume(col, row)
+        return col, row
