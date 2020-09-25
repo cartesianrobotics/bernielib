@@ -255,6 +255,10 @@ class robot():
         self.pipetteServoUp()
         
     
+    def _calcExtraLength(self):
+        return self.getTipLength() * self.tip_attached
+    
+    
     
 # ================================================================================
 # Load cells (pressure sensors) functions
@@ -518,7 +522,7 @@ class robot():
         # Getting rack object
         r = self._getRackObjectByName(rack_name)
         # Rack top value
-        z_top = r.getZ()
+        z_top = r.getZ(added_length=self._calcExtraLength())
         z_safe = z_top - save_height
         # Checking whether I need to raise Z axis before movement
         if z > z_safe:
@@ -675,7 +679,7 @@ class robot():
         r = self._getRackObjectByName(rack_name=rack)
         
         # Obtaining calibration parameters
-        (x1, x2, y1, y2, how)= r.getInitialCalibrationXY()
+        (x1, x2, y1, y2, how)= r.getInitialCalibrationXY(added_z_length=self._calcExtraLength())
         lift_z = r.getCalibrationLiftZ()
         
         # Finding object center
@@ -697,6 +701,7 @@ class robot():
         depth = 5
         z = self.moveDownUntilPress(step=z_increment, 
                             threshold=z_threshold, z_max=initial_z+depth)
+        z = z + self._calcExtraLength()
         r.setZ(z)
         self.moveAxisDelta('Z', -5)
         
@@ -793,7 +798,7 @@ class rack():
         self._setSetting('slot_id', slot_id)
         
     def getSlot(self):
-        self._getSetting('slot_id')
+        return self._getSetting('slot_id')
         
     def setCenterXY(self, x=None, y=None):
         """
@@ -813,11 +818,17 @@ class rack():
         """
         self._setSetting('calibration_Z', z)
         
-    def getCalibrationZ(self):
+    def getCalibrationZ(self, added_length=0):
         """
         Returns absolute Z value at which calibration shall start
+        Inputs
+            added_length
+                variable which lets robot to account for variable pipette length.
+                For example, the pipette may or may not have a tip attached,
+                and so, the calibration height will be different.
+                Default: 0
         """
-        return self._getSetting('calibration_Z')
+        return self._getSetting('calibration_Z') - added_length
         
     def setZ(self, z):
         """
@@ -826,11 +837,17 @@ class rack():
         """
         self._setSetting('detected_z', z)
         
-    def getZ(self):
+    def getZ(self, added_length=0):
         """
         Returns Z value at which the pipette without a tip would touch the rack, triggering load cells.
+        Inputs
+            added_length
+                variable which lets robot to account for variable pipette length.
+                For example, the pipette may or may not have a tip attached,
+                and so, the calibration height will be different.
+                Default: 0
         """
-        return self._getSetting('detected_z')
+        return self._getSetting('detected_z') - added_length
         
     def setRackSize(self, x, y, z):
         """
@@ -921,7 +938,7 @@ class rack():
         return coord_list[column][row][0], coord_list[column][row][1]
     
     
-    def getInitialCalibrationXY(self):
+    def getInitialCalibrationXY(self, added_z_length=0):
         style = self.getCalibrationStyle()
         if style=='outer' or style == 'inner':
             # This case happens if the rack is to be calibrated from outside (like samples rack), or 
@@ -948,7 +965,7 @@ class rack():
             print("Please use 'outer', 'inner' or 'well' styles.")
             print("Current provided style is: ", style)
         # Z coordinate at which calibration is started
-        z = self.getCalibrationZ()
+        z = self.getCalibrationZ(added_length=added_z_length)
         # Formatting the calibration points coordinates. All in the form of (x, y, z)
         p1 = (x_edge_1, y, z)
         p2 = (x_edge_2, y, z)
