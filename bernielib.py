@@ -255,6 +255,18 @@ class robot():
         self.pipetteServoUp()
         
     
+    def dumpTipToWaste(self):
+        self.moveToWell('waste', 0, 0)
+        self.dumpTip()
+    
+    
+    def dumpTipToPosition(self, column, row):
+        self.moveToWell('tips', column, row)
+        self.moveAxisDelta('Z', 40) # Moving deeper into the tip well, so the tip does not miss
+        self.dumpTip()
+        self.moveToWell('tips', column, row)
+    
+    
     def _calcExtraLength(self):
         return self.getTipLength() * self.tip_attached
     
