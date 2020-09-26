@@ -2,11 +2,11 @@ import serial
 import time
 import re
 import logging
-import json
 
 # Local files
 from samples import sample_type
 from general import listSerialPorts
+from general import data
 
 
 #TODO: Tip end correction
@@ -28,18 +28,17 @@ END_OF_LINE = "\r"
 
 
 
-class robot():
+class robot(data):
     """
     Handles all robot operations
     """
     
     def __init__ (self, cartesian_port_name, pipette_port_name, misc_port_name):
         
-        self.data = {}
-        self.recent_message = ''
-        self.name = 'robot'
         
-        self.loadData()
+        super().__init__(name='robot')
+        
+        self.recent_message = ''
         
         # Initializing racks for the robot
         self.samples_rack = rack('samples')
@@ -745,92 +744,22 @@ class robot():
         
         return x_center, y_center, z
 
-    
-        
-# ==============================================================================
-# Settings storage and manipulations
-        
-    def loadData(self, path=None):
-        if path is None:
-            path=self.name+'.json'
-        try:
-            f = open(path, 'r')
-            self.data = json.loads(f.read())
-            f.close()
-        except FileNotFoundError:
-            self.data = {}
-    
-    
-    def showData(self):
-        return self.data
-    
-    
-    def _getSetting(self, name):
-        try:
-            value = self.data[name]
-        except:
-            print ("Error: setting ", name, " is not specified.")
-            print ("Use _setSetting('setting_name', value) to specify it.")
-            print ("Alternatively, do self.data['setting_name']=value to set it temporary.")
-            return
-        return value
-    
-    def _setSetting(self, name, value):
-        self.data[name] = value
-        self.save()
-    
-    def save(self):
-        f = open(self.name+'.json', 'w')
-        f.write(json.dumps(self.data))
-        f.close()
         
         
 
-class rack():
+class rack(data):
     """
     Handles a rack info and functions
     """
     
     def __init__(self, name):
-        self.name = name
-        self.loadData()
+        super().__init__(name=name)
         
         # Dictionary storing sample objects
         # {sample_object: (x_n, y_n)}
         # x_n, y_n - position (well) in the rack
         self.samples_dict = {}
     
-    
-    def _getSetting(self, name):
-        try:
-            value = self.data[name]
-        except:
-            print ("Error: setting ", name, " is not specified.")
-            print ("Use _setSetting('setting_name', value) to specify it.")
-            print ("Alternatively, do self.data['setting_name']=value to set it temporary.")
-            return
-        return value
-    
-    
-    def _setSetting(self, name, value):
-        self.data[name] = value
-        self.save()
-    
-    
-    def loadData(self, path=None):
-        if path is None:
-            path=self.name+'.json'
-        try:
-            f = open(path, 'r')
-            self.data = json.loads(f.read())
-            f.close()
-        except FileNotFoundError:
-            self.data = {}
-    
-    def save(self):
-        f = open(self.name+'.json', 'w')
-        f.write(json.dumps(self.data))
-        f.close()
             
     def setSlot(self, slot_id):
         self._setSetting('slot_id', slot_id)
