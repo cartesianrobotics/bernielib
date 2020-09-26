@@ -4,7 +4,7 @@ class sample_type():
     """
     
     
-class sample()
+class sample():
     """
     Class handling samples
     """
