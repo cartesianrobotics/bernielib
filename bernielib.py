@@ -5,6 +5,9 @@ import logging
 import sys
 import json
 
+# Local files
+from samples import sample_type
+
 
 #TODO: Tip end correction
 
@@ -281,6 +284,49 @@ class robot():
         self.pickUpTip(col, row)
         self.last_tip_coord = (col, row)
 
+    
+    def setPipetteVolumeConstants(self, slope, intercept):
+        """
+        This function saves constants to re-calculate volume to plunger position.
+        
+        When working with a robot, user wants to program the pipette plunger to move
+        from certain volume to the other volume, not some arbitrary plunger movement distance.
+        
+        Plunger movement is proportional to the pipetted liquid (linear relation).
+        To enable recalculation, user must provide slope and intercept value of 
+        a linear dependence "volume vs. plunger position"
+        """
+        self._setSetting('volume_to_position_slope', slope)
+        self._setSetting('volume_to_position_intercept', intercept)
+    
+    
+    def getPipetteVolumeConstants(self):
+        """
+        Returns slope and intercept for re-calculating volume into pipette plunger movement
+        """
+        slope = self._getSetting('volume_to_position_slope')
+        intercept = self._getSetting('volume_to_position_intercept')
+        return slope, intercept
+        
+    def calcPipettePositionFromVolume(self, volume):
+        """
+        Re-calculates volume (in uL) into plunger position
+        Returns pipette plunger position for that volume
+        """
+        k, b = self.getPipetteVolumeConstants()
+        position = volume * k + b
+        # Adding "-" because k, b were calculated for negative movement
+        # TODO: re-calculate k,b; remove "-"
+        return -position
+    
+
+    def movePipetteToVolume(self, volume):
+        plunger_position = self.calcPipettePositionFromVolume(volume)
+        self.pipetteMove(plunger_position)
+        
+        
+    
+    
     
 # ================================================================================
 # Load cells (pressure sensors) functions
