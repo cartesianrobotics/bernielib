@@ -119,8 +119,8 @@ class sample(data):
         self.stype = stype # Object of a class sample_type
         if volume is not None:
             self.setVolume(volume)
-        
-    
+            
+
     def setVolume(self, volume):
         self._setSetting('volume', volume)
         
@@ -151,12 +151,12 @@ class sample(data):
         return z_sample_top
         
     def calcSampleAbsZFromZRelativeToTop(self, z_relative_to_top, added_length=0):
-        z_top_abs = self.getSampleTopAbsZ(self, added_length=added_length)
+        z_top_abs = self.getSampleTopAbsZ(added_length=added_length)
         z = z_top_abs + z_relative_to_top
         return z
         
     def calcAbsLiquidLevelFromVol(self, volume, added_length=0):
-        z_top_abs = self.getSampleTopAbsZ(self, added_length=added_length)
+        z_top_abs = self.getSampleTopAbsZ(added_length=added_length)
         z_relative = self.stype.getDepthFromVolume(volume)
         z = z_top_abs + z_relative
         return z

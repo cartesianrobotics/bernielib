@@ -1,6 +1,7 @@
 import serial
 import sys
 import json
+import os
 
 
 def listSerialPorts():
@@ -74,3 +75,14 @@ class data():
             f.close()
         except FileNotFoundError:
             self.data = {}
+            
+    def purge(self):
+        """
+        Attention! Do not run unless you know what you are doing.
+        Removes all data for the object, both on hard drive and memory.
+        """
+        try:
+            os.remove(self.name+'.json')
+        except:
+            pass
+        self.data = {}
