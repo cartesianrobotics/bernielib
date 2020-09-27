@@ -165,3 +165,11 @@ class sample(data):
         col, row = self.getWell()
         x, y = self.rack.calcWellXY(col, row)
         return x, y
+        
+        
+    def dump(self):
+        """
+        Destroys sample, and removes its data from the drive
+        Use it when you need to state during the protocol that the sample is never going to be needed, or used up.
+        """
+        self.purge()
