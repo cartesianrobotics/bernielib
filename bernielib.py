@@ -5,6 +5,7 @@ import logging
 
 # Local files
 from samples import sample_type
+from samples import sample
 from general import listSerialPorts
 from general import data
 
