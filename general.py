@@ -54,7 +54,15 @@ class data():
             return
         return value
         
-        
+    def _settingPresent(self, name):
+        try:
+            value = self.data[name]
+            present = True
+        except:
+            present = False
+        return present
+
+    
     def _setSetting(self, name, value):
         self.data[name] = value
         self.save()

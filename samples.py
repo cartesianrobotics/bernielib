@@ -104,8 +104,48 @@ class sample_type(data):
         max_vol = max(vols_list)
         return max_vol
     
+    def setExtraImmersionVol(self, volume):
+        """
+        When uptaking the liquid from the sample, one shall insert the pipette deeper that 
+        the desired volume, or else the pipette will uptake bubbles.
+        This setting determines how much deeper to insert. 
+        Inputs
+            volume
+                extra volume to insert the pipette, in uL.
+                
+        Example: from eppendorf tube, I want to get 200 uL of liquid. Currently, there is 1000 uL present.
+        If I insert to 800 uL, the pipette will uptake bubbles. So I need to insert deeper. 
+        if I provide volume=50, the pipette will go 50 uL deeper, meaning, to the 750 uL position.
+        """
+        self._setSetting('extra_immersion_volume', volume)
     
+    def getExtraImmersionVol(self):
+        return self._getSetting('extra_immersion_volume')
     
+    def setCloseToBottomVol(self, volume):
+        """
+        If I need to uptake most of the liquid from the tube, I am risking to either hit the 
+        bottom and not uptake anything, or wrongly estimate the real volume/real tube height, and 
+        uptake bubbles. So to uptake, I need to perform speciall "near bottom uptake procedure".
+        This setting informs the robot when to engage this procedure.
+        """
+        self._setSetting('close_to_bottom_volume', volume)
+        
+    def getCloseToBottomVol(self):
+        return self._getSetting('close_to_bottom_volume')
+    
+    def setLowVolUptakeParameters(self, step, steps_number, delay):
+        self._setSetting('low_vol_uptake_single_step', step)
+        self._setSetting('low_vol_uptake_number_of_steps', steps_number)
+        self._setSetting('low_vol_uptake_delay_between_steps', delay)
+    
+    def getLowVolUptakeParameters(self):
+        step = self._getSetting('low_vol_uptake_single_step')
+        steps_number = self._getSetting('low_vol_uptake_number_of_steps')
+        delay = self._getSetting('low_vol_uptake_delay_between_steps')
+        return step, steps_number, delay
+        
+
     
     
 class sample(data):
@@ -161,11 +201,10 @@ class sample(data):
         z = z_top_abs + z_relative
         return z
     
-    def getSampleCenterXY(self):
+    def getCenterXY(self):
         col, row = self.getWell()
         x, y = self.rack.calcWellXY(col, row)
-        return x, y
-        
+        return x, y        
         
     def dump(self):
         """
@@ -173,3 +212,64 @@ class sample(data):
         Use it when you need to state during the protocol that the sample is never going to be needed, or used up.
         """
         self.purge()
+    
+    def setExtraImmersionVol(self, volume):
+        """
+        Overrides the setting from the sample type class
+        """
+        self._setSetting('extra_immersion_volume', volume)
+    
+    def getExtraImmersionVol(self):
+        if self._settingPresent('extra_immersion_volume'):
+            return self._getSetting('extra_immersion_volume')
+        else:
+            return self.stype.getExtraImmersionVol()
+            
+    def _allowDry(self, volume):
+        if volume >= self.getVolume():
+            return True
+        else:
+            return False
+            
+    def _allowPlungerLagCompensation(self, v_uptake, v_lag):
+        v_total = self.getVolume()
+        v_lag_allowed = v_total - v_uptake
+        if v_lag_allowed > v_lag:
+            return v_lag
+        elif v_lag_allowed < v_lag and v_lag_allowed > 0:
+            return v_lag_allowed
+        else:
+            return 0
+            
+    def _isLowVolumeUptakeNeeded(self, v_uptake):
+        """
+        Determine whether robot needs to perform low volume uptake procedure
+        """
+        v_total = self.getVolume()
+        v_extra_immers = self.getExtraImmersionVol()
+        v_immers = v_uptake + v_extra_immers
+        v_remain = v_total - v_immers
+        v_threshold = self.stype.getCloseToBottomVol()
+        
+        if v_threshold < v_remain:
+            # Enough liquid
+            return False
+        else:
+            return True
+            
+        
+    def calcNormalPipettingZ(self, v_uptake, v_lag, added_length):
+        v_total = self.getVolume()
+        v_lag = self._allowPlungerLagCompensation(v_uptake, v_lag)
+        v_extra_immers = self.getExtraImmersionVol()
+        v_immers = v_total - v_uptake - v_lag - v_extra_immers
+        z = self.calcAbsLiquidLevelFromVol(v_immers, added_length=added_length)
+        return z
+        
+
+    def setPipettingDelay(self, delay):
+        self._setSetting('pipetting_delay', delay)
+    
+    def getPipettingDelay(self):
+        return self._getSetting('pipetting_delay')        
+    

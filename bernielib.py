@@ -296,7 +296,85 @@ class robot(data):
         self.pipetteMove(plunger_position)
         
         
+    def setPipetteDelay(self, delay):
+        """
+        Sets delay in seconds after pipetting action. Overrides by the individual sample setting.
+        """
+        self._setSetting('pipetting_delay', delay)
+        
+    def getPipetteDelay(self, sample=None):
+        if sample is None:
+            return self._getSetting('pipetting_delay')
+        else:
+            if sample._settingPresent('pipetting_delay'):
+                return sample._getPipettingDelay()
+            else:
+                return self._getSetting('pipetting_delay')
+                
     
+    def uptakeLiquid(self, sample, volume, lag_vol=5, dry_tube=False):
+        """
+        Uptakes selected amount of liquid from the sample.
+            Inputs:
+                sample
+                    object of a sample class; the sample from which to take the liquid.
+                volume
+                    Volume of liquid to uptake
+                lag_vol
+                    To compensate for the plunger lag, the robot will uptake a little more
+                    liquid, and then release it back. Default 5. Specify 0 to turn it off.
+                    In case there is not enough liquid, robot will automatically turn it off.
+                dry_tube
+                    Provide True to command the robot to perform special procedure to make sure that all 
+                    liquid is out of the tube. Only makes sense if the volume in the
+                    tube is <= uptake volume. Otherwise robot will automatically turn it back to False
+        """
+        
+        pipetting_delay = self.getPipetteDelay(sample=sample)
+        lag_vol_up = lag_vol
+        lag_vol_down = sample._allowPlungerLagCompensation(volume, lag_vol)
+        # Moving plunger down
+        self.movePipetteToVolume(volume+lag_vol_up+lag_vol_down)
+        # Correcting for upward lag
+        self.movePipetteToVolume(volume+lag_vol_down)
+        
+        # Acquiring sample coordinates and moving pipette there:
+        self.moveToSample(sample)
+        
+        if sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
+            # write low volume uptake procedure
+            pass
+            # Moving to the critical volume
+            vol_to_immers_approx = sample.stype.getCloseToBottomVol()
+            z_immers_approx = sample.calcAbsLiquidLevelFromVol(vol_to_immers_approx, 
+                                                               added_length=self._calcExtraLength())
+            self.move(z=z_immers_approx)
+            # Approaching the bottom of the tube
+            moveDownUntilPress(step=1, threshold=500)
+            step, steps_number, delay = getLowVolUptakeParameters()
+            remaining_vol = volume
+            vol_per_step = volume / steps_number
+            for i in range(steps_number):
+                remaining_vol = remaining_vol - vol_per_step
+                self.movePipetteToVolume(remaining_vol)
+                time.sleep(delay)
+                self.moveAxisDelta('Z', -step)
+            self.movePipetteToVolume(0)
+            time.sleep(delay)
+            self.movePipetteToVolume(lag_vol_down)
+            
+        else:
+            # Normal uptake procedure
+            z_immers = sample.calcNormalPipettingZ(
+                            v_uptake=volume, v_lag=lag_vol_down, added_length=self._calcExtraLength())
+            self.move(z=z_immers)
+            self.movePipetteToVolume(0)
+            time.sleep(pipetting_delay)
+            self.movePipetteToVolume(lag_vol_down)
+
+        # Moving to the sample top after uptake
+        self.moveToSample(sample)
+
     
     
 # ================================================================================
@@ -317,6 +395,13 @@ class robot(data):
 
     def getCombinedLoad(self):
         return self.readRightLoad() + self.readLeftLoad()
+    
+    
+    def setTubeBottomLoadThreshold(self, z):
+        self._setSetting('tube_bottom_load_threshold', z)
+        
+    def getTubeBottomLoadThreshold(self):
+        return self._getSetting('tube_bottom_load_threshold')
     
 # ===================================================================================
 # Magnetic rack functions
@@ -571,6 +656,17 @@ class robot(data):
         self.move(x=x, y=y, z=z_safe, z_first=False)
         return self.getPosition()
 
+
+    def moveToSample(self, sample, z=None):
+        x, y = sample.getCenterXY()
+        if z is None:
+            z = sample.getSampleTopAbsZ(added_length=self._calcExtraLength())
+        # Checking whether the tip is below the safe position
+        z_current = self.getPosition(axis='Z')
+        z_safe = z - 10
+        if z_current > z_safe:
+            self.moveAxis(axis='Z', dist=z_safe)
+        self.move(x, y, z, z_first=False)
 
 # ==============================================================================
 # Positioning routine
