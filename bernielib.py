@@ -1230,7 +1230,7 @@ class consumable(rack):
         unused_consumable_list = []
         for i in range(cols):
             for j in range(rows):
-                unused_consumable_list.append((i, j))
+                unused_consumable_list.append([i, j])
         self._setSetting('unused_consumable_list', unused_consumable_list)
 
     
@@ -1248,7 +1248,7 @@ class consumable(rack):
         """
         unused_consumable_list = self._getReadyList()
         try:
-            unused_consumable_list.remove((col, row))
+            unused_consumable_list.remove([col, row])
         except:
             pass
         self._setSetting('unused_consumable_list', unused_consumable_list)
@@ -1259,7 +1259,7 @@ class consumable(rack):
         Use when you command a robot to place a tip back into the rack
         """
         unused_consumable_list = self._getReadyList()
-        unused_consumable_list.append((col, row))
+        unused_consumable_list.append([col, row])
         self._setSetting('unused_consumable_list', unused_consumable_list)
         
     def next(self, consume=True):
