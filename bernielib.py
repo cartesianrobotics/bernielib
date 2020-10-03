@@ -350,8 +350,8 @@ class robot(data):
                                                                added_length=self._calcExtraLength())
             self.move(z=z_immers_approx)
             # Approaching the bottom of the tube
-            moveDownUntilPress(step=1, threshold=500)
-            step, steps_number, delay = getLowVolUptakeParameters()
+            self.moveDownUntilPress(step=0.2, threshold=200)
+            step, steps_number, delay = sample.stype.getLowVolUptakeParameters()
             remaining_vol = volume
             vol_per_step = volume / steps_number
             for i in range(steps_number):
@@ -371,12 +371,128 @@ class robot(data):
             self.movePipetteToVolume(0)
             time.sleep(pipetting_delay)
             self.movePipetteToVolume(lag_vol_down)
-
+        
+        # Correcting the volume
+        init_sample_vol = sample.getVolume()
+        final_sample_vol = init_sample_vol - volume
+        if final_sample_vol < 0:
+            final_sample_vol = 0
+        sample.setVolume(final_sample_vol)
+        
         # Moving to the sample top after uptake
         self.moveToSample(sample)
 
     
+    def dispenseLiquid(self, sample, volume, extra_vol_insert=100, plunger_retract=True, blow_extra=False,
+                       move_up_after=True):
+        """
+        Dispenses liquid from pipettor into specified sample
+        """
+        
+        pipetting_delay = self.getPipetteDelay(sample=sample)
+        self.moveToSample(sample)
+        # Moving pipette further into the sample
+        # TODO: create sample type setting for that
+        z_in = sample.calcAbsLiquidLevelFromVol(sample.stype.getMaxVolume()-extra_vol_insert, 
+                                                added_length=self._calcExtraLength())
+        self.moveAxis('Z', z_in)
+        self.movePipetteToVolume(volume)
+        # Updating the volume of the liquid in the sample
+        V_init = sample.getVolume()
+        V_max = sample.stype.getMaxVolume()
+        V_final = V_init + volume
+        if V_final > V_max:
+            # Overflown condition; should never occur, but I am adding correction anyway
+            # TODO: do proper check for the overflow; stop the pipetting if that happens
+            V_final = V_max
+        sample.setVolume(V_final)
+        
+        # Blowing extra volume
+        if blow_extra: 
+            # Moving down all the way
+            self.pipetteMove(40)
+        
+        if move_up_after:
+            self.moveToSample(sample)
+        
+        if plunger_retract:
+            self.movePipetteToVolume(0)
+        
+
+    def touchWall(self, sample, V_touch=None, touch_liquid=False, x=0, y=0, z=None):
+        """
+        Touches the wall of the tube. After pipetting, there might be a liquid drop hanging on the tip.
+        This allows to touch a tube, so the drop is left on it.
+        
+        Inputs:
+            sample
+                Object of the sample class, a tube that is going to be touched.
+            V_touch
+                Level in the tube, at which the touch will be performed, mL.
+            touch_liquid
+                If True, the liquid will be touched instead of the wall. V_touch parameter is ignored.
+                Defatult is False
+            x, y
+                Coordinates relative to the tube center at which the touch will be performed.
+                If 0 (default), the touch coordinates will be calculated from the tube inner diameter.
+                If any coordinate is provided, that will be the coordinate at which touching is performed.
+            z
+                Z coordinate at which to perform touching, relative to the top of the tube. 
+                Default is None, in which case the V_touch is used to calculate Z coordinate. 
+                Positive value means inside the tube; 0 means at the top of the tube. Negative values are forbidden.
+                Overrides specified V_touch or touch_liquid parameter
+        """
+        
+        # Now figuring out height at which to touch
+        if z is not None:
+            # Overriding other settings if z is explicitly provided
+            touch_liquid = False
+            V_touch = None
+            # Recalculating to the absolute z coordinate
+            z = sample.calcSampleAbsZFromZRelativeToTop(z, added_length=self._calcExtraLength())
     
+        if touch_liquid:
+            # Calculating height of the present liquid
+            V_liquid = sample.getVolume()
+            V_extra_dip = sample.getExtraImmersionVol()
+            # Ignoring V_touch setting that may be provided
+            V_touch = V_liquid - V_extra_dip
+            # Checking that volume is not below the bottom of the tube
+            if V_touch < 0:
+                V_touch = 0
+        
+        if V_touch is not None:
+            # If we know V_touch, we can calculate absolute Z coordinate from that
+            z = sample.calcAbsLiquidLevelFromVol(V_touch, added_length=self._calcExtraLength())
+        
+        if (V_touch is None) and (not touch_liquid) and (z is None):
+            # If nothing is known, I insert the tip 100 uL below the tube top
+            # Move this value as a separate setting for the sample type
+            z = sample.calcAbsLiquidLevelFromVol(sample.stype.getMaxVolume()-100, 
+                                                added_length=self._calcExtraLength())
+
+        # Now figuring out coordinates x and y at which to touch
+        if x == 0 and y == 0:
+            # If nothing is provided, taking them from sample type diameter settings
+            x = sample.stype.getInnerDiameter() / 2.0
+        
+        x_cntr, y_cntr = sample.getCenterXY()
+        x_abs = x_cntr + x
+        y_abs = y_cntr + y
+        
+        # Now performing operations
+        # Going down to the level at which to touch the wall
+        self.move(z=z)
+        # Touching the wall
+        self.move(x=x_abs, y=y_abs)
+        # Going back to the center
+        self.move(x=x_cntr, y=y_cntr)
+        # Moving up
+        self.moveToSample(sample)
+        
+        
+
+
 # ================================================================================
 # Load cells (pressure sensors) functions
     
