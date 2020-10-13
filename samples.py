@@ -249,7 +249,7 @@ class sample(data):
         v_extra_immers = self.getExtraImmersionVol()
         v_immers = v_uptake + v_extra_immers
         v_remain = v_total - v_immers
-        v_threshold = self.stype.getCloseToBottomVol()
+        v_threshold = self.getCloseToBottomVol()
         
         if v_threshold < v_remain:
             # Enough liquid
@@ -273,3 +273,49 @@ class sample(data):
     def getPipettingDelay(self):
         return self._getSetting('pipetting_delay')        
     
+    def setZBottom(self, z):
+        """
+        Sets absolute Z coordinate of the bottom of the tube.
+        This is the coordinate at which robot will physically touch the bottom with specified force.
+        """
+        self._setSetting('tube_bottom_z', z)
+        
+    def getZBottom(self):
+        """
+        Returns absolute Z coordinate of the bottom of the tube, at which the robot will physically press into the bottom.
+        Assumed the robot has a tip attached.
+        At this level pipetting will likely fail; you need to lift the robot 0.5 mm up or more.
+        """
+        return self._getSetting('tube_bottom_z')
+    
+    def setCloseToBottomVol(self, v):
+        """
+        Set the volume at which robot will perform "low volume" operations; such as 
+        touching the bottom in order to find its precise coordinates.
+        
+        Overrides the setting for the sample type. 
+        
+        Use it so robot won't touch bottom every time for the same sample, wasting time.
+        """
+        self._setSetting('close_to_bottom_volume', v)
+        
+    def getCloseToBottomVol(self):
+        """
+        Returns the volume at which robot will perform "low volume" operations.
+        Don't confuse with the same setting for sample type; this function sets it for the individual sample.
+        
+        Use it so robot does not have to touch bottom of the tube every time.
+        """
+        if self._settingPresent('close_to_bottom_volume'):
+            v = self._getSetting('close_to_bottom_volume')
+        else:
+            # If the setting was not specified for the specific sample, use sample type 
+            # to obtain this setting instead.
+            v = self.stype.getCloseToBottomVol()
+        return v
+        
+    def setBottomTouched(self):
+        """
+        Called when robot performed at least one approach Z to bottom.
+        """
+        self._setSetting('robot_touched_sample_bottom', 1)

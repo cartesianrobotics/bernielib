@@ -312,7 +312,7 @@ class robot(data):
                 return self._getSetting('pipetting_delay')
                 
     
-    def uptakeLiquid(self, sample, volume, lag_vol=5, dry_tube=False):
+    def uptakeLiquid(self, sample, volume, lag_vol=5, dry_tube=False, in_place=False):
         """
         Uptakes selected amount of liquid from the sample.
             Inputs:
@@ -328,6 +328,8 @@ class robot(data):
                     Provide True to command the robot to perform special procedure to make sure that all 
                     liquid is out of the tube. Only makes sense if the volume in the
                     tube is <= uptake volume. Otherwise robot will automatically turn it back to False
+                in_place
+                    If True, the robot will uptake liquid right where it is, without adjusting XYZ coordinates.
         """
         
         pipetting_delay = self.getPipetteDelay(sample=sample)
@@ -338,9 +340,6 @@ class robot(data):
         # Correcting for upward lag
         self.movePipetteToVolume(volume+lag_vol_down)
         
-        # Acquiring sample coordinates and moving pipette there:
-        self.moveToSample(sample)
-        
         if sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
             # write low volume uptake procedure
             pass
@@ -348,26 +347,47 @@ class robot(data):
             vol_to_immers_approx = sample.stype.getCloseToBottomVol()
             z_immers_approx = sample.calcAbsLiquidLevelFromVol(vol_to_immers_approx, 
                                                                added_length=self._calcExtraLength())
-            self.move(z=z_immers_approx)
-            # Approaching the bottom of the tube
-            self.moveDownUntilPress(step=0.2, threshold=200)
-            step, steps_number, delay = sample.stype.getLowVolUptakeParameters()
-            remaining_vol = volume
-            vol_per_step = volume / steps_number
-            for i in range(steps_number):
-                remaining_vol = remaining_vol - vol_per_step
-                self.movePipetteToVolume(remaining_vol)
-                time.sleep(delay)
-                self.moveAxisDelta('Z', -step)
-            self.movePipetteToVolume(0)
-            time.sleep(delay)
-            self.movePipetteToVolume(lag_vol_down)
             
+            # checking whether the sample bottom was touched before
+            if sample._settingPresent('tube_bottom_z'):
+                z_lowest = sample.getZBottom() - 0.5
+                if z_immers_approx > z_lowest:
+                    z_immers_approx = z_lowest
+                if not in_place:
+                    self.moveToSample(sample, z=z_immers_approx)
+                self.movePipetteToVolume(0)
+                time.sleep(pipetting_delay)
+                self.movePipetteToVolume(lag_vol_down)
+            else:
+                # If robot never touched the sample bottom before, perform 
+                # gradual approach to discover safe bottom coordinate
+                if not in_place:
+                    self.moveToSample(sample, z=z_immers_approx)
+                # Approaching the bottom of the tube
+                z_sample_bottom = self.moveDownUntilPress(step=0.2, threshold=200)
+                # Recording Z coordinate at which all liquid will be uptaken for the sample
+                # 0.5 means that liquid uptake will happen 0.5 mm above the bottom
+                # TODO: transfer this for the sample type or robot setting.
+                sample.setZBottom(z_sample_bottom)
+                # Recording for the sample that the bottom was touched
+                sample.setBottomTouched()
+                step, steps_number, delay = sample.stype.getLowVolUptakeParameters()
+                remaining_vol = volume
+                vol_per_step = volume / steps_number
+                for i in range(steps_number):
+                    remaining_vol = remaining_vol - vol_per_step
+                    self.movePipetteToVolume(remaining_vol)
+                    time.sleep(delay)
+                    self.moveAxisDelta('Z', -step)
+                self.movePipetteToVolume(0)
+                time.sleep(delay)
+                self.movePipetteToVolume(lag_vol_down)
         else:
             # Normal uptake procedure
             z_immers = sample.calcNormalPipettingZ(
                             v_uptake=volume, v_lag=lag_vol_down, added_length=self._calcExtraLength())
-            self.move(z=z_immers)
+            if not in_place:
+                self.moveToSample(sample, z=z_immers)
             self.movePipetteToVolume(0)
             time.sleep(pipetting_delay)
             self.movePipetteToVolume(lag_vol_down)
@@ -378,24 +398,41 @@ class robot(data):
         if final_sample_vol < 0:
             final_sample_vol = 0
         sample.setVolume(final_sample_vol)
-        
-        # Moving to the sample top after uptake
-        self.moveToSample(sample)
+
 
     
-    def dispenseLiquid(self, sample, volume, extra_vol_insert=100, plunger_retract=True, blow_extra=False,
-                       move_up_after=True):
+    def dispenseLiquid(self, sample, volume, extra_vol_insert=100, in_place=False, plunger_retract=True, 
+                       blow_extra=False, move_up_after=True):
         """
         Dispenses liquid from pipettor into specified sample
+        Inputs
+            sample
+                Object of a class sample
+            volume  
+                volume to dispense
+            extra_vol_insert
+                Level at which the pipette will be inserted into the tube, relative to the sample top.
+                For example, if total maximum volume of a tube is 1700 uL, then value 100 will make robot
+                insert the tip to the level of 1600 uL.
+            in_place
+                If True, will dispence liquid right where the robot currently is, without
+                adjusting any coordinate
+            plunger_retract
+                After pipetting, plunger will be retracted to 0
+            blow_extra
+                After pipetting, robot will move plunger down all the way, to remove all possible leftover
+                liquid in the tip
+            move_up_after
+                If true, robot will move up to the top of the tube after pipetting
         """
         
         pipetting_delay = self.getPipetteDelay(sample=sample)
-        self.moveToSample(sample)
         # Moving pipette further into the sample
         # TODO: create sample type setting for that
         z_in = sample.calcAbsLiquidLevelFromVol(sample.stype.getMaxVolume()-extra_vol_insert, 
                                                 added_length=self._calcExtraLength())
-        self.moveAxis('Z', z_in)
+        if not in_place:
+            self.moveToSample(sample, z=z_in)
         self.movePipetteToVolume(volume)
         # Updating the volume of the liquid in the sample
         V_init = sample.getVolume()
@@ -413,13 +450,14 @@ class robot(data):
             self.pipetteMove(40)
         
         if move_up_after:
-            self.moveToSample(sample)
+            z_up = sample.calcAbsLiquidLevelFromVol(V_max, added_length=self._calcExtraLength())
+            self.move(z=z_up)
         
         if plunger_retract:
             self.movePipetteToVolume(0)
         
 
-    def touchWall(self, sample, V_touch=None, touch_liquid=False, x=0, y=0, z=None):
+    def touchWall(self, sample, V_touch=None, touch_liquid=False, x=0, y=0, z=None, move_up_after=False):
         """
         Touches the wall of the tube. After pipetting, there might be a liquid drop hanging on the tip.
         This allows to touch a tube, so the drop is left on it.
@@ -488,9 +526,41 @@ class robot(data):
         # Going back to the center
         self.move(x=x_cntr, y=y_cntr)
         # Moving up
-        self.moveToSample(sample)
+        if move_up_after:
+            self.moveToSample(sample)
+                
         
+
+    def pipetteUpAndDown(self, sample, v_uptake, repeats):
+        """
+        Pipette sample up and down
+        """
         
+        self.uptakeLiquid(sample, v_uptake, lag_vol=0)
+        for i in range(repeats):
+            self.dispenseLiquid(sample, v_uptake, plunger_retract=False, move_up_after=False, in_place=True)
+            self.uptakeLiquid(sample, v_uptake, lag_vol=0, in_place=True)
+        self.dispenseLiquid(sample, 200, blow_extra=True)
+        
+
+    def transferLiquid(self, source, destination, volume, lag_vol=5, dry_tube=False, v_immerse_dispense=100,
+                       touch_wall=True, safe_z=0):
+        # Generating list of volumes. Entire volume may be impossible to transfer one time
+        v_list = []
+        for i in range(int(volume // 200)):
+            v_list.append(200)
+        v_remain = volume - 200 * (volume // 200)
+        if v_remain > 0:
+            v_list.append(v_remain)
+        
+        for v in v_list:
+            self.move(z=safe_z)
+            self.uptakeLiquid(source, v, lag_vol=lag_vol, dry_tube=dry_tube)
+            self.move(z=safe_z)
+            self.dispenseLiquid(destination, v, extra_vol_insert=v_immerse_dispense, blow_extra=True)
+            if touch_wall:
+                self.touchWall(destination)
+            
 
 
 # ================================================================================
