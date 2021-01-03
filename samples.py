@@ -319,3 +319,53 @@ class sample(data):
         Called when robot performed at least one approach Z to bottom.
         """
         self._setSetting('robot_touched_sample_bottom', 1)
+        
+
+
+def createSample(type_name, sample_name, rack, pos_col, pos_row, volume, purge=True):
+    stype = sample_type(type_name)
+    s = sample(sample_name, stype)
+    if purge:
+        # If dealing with a new sample, program purges all settings that may have been left
+        # from the old sample.
+        s.purge()
+        s = sample(sample_name, stype)
+    s.place(rack, pos_col, pos_row)
+    s.setVolume(volume)
+    return s
+    
+
+def createSamplesToPurifyList(robot, volume_list):
+    type_name = 'eppendorf'
+    rack = robot.samples_rack
+    
+    sample_counter = 0
+    sample_list = []
+    for volume in volume_list:
+        sample_name = 'sample'+str(sample_counter)
+        s = createSample(type_name, sample_name, rack, pos_col=1, pos_row=sample_counter, volume=volume)
+        sample_list.append(s)
+        sample_counter += 1
+        
+    return sample_list
+    
+
+def createPurifiedSamplesList(robot, number, row_start=0):
+    type_name = 'eppendorf'
+    rack = robot.samples_rack
+    
+    sample_counter = 0
+    sample_list = []
+    
+    for i in range(number):
+        sample_name = 'purified'+str(sample_counter)
+        # Starting with 0 volume, liquid will be there after purification.
+        s = createSample(type_name, sample_name, rack, pos_col=0, pos_row=row_start, volume=0)
+        sample_list.append(s)
+        sample_counter += 1
+        row_start += 1 # Every next sample is occupying a new row
+        
+    return sample_list
+    
+
+# TODO: create sample list for intermediate tubes

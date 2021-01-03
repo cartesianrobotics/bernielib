@@ -1,0 +1,38 @@
+Height,H_relative_to,Plunger_pos,dx,dy,min_vol_condition,max_vol_condition,delay,comment
+0,top,down,0,0,0,1700,0.5,Initially lowering the plunger
+1,bottom,up,0,0,0,250,0.5,mixing in place
+1,bottom,down,0,0,0,250,0.5,mixing in place
+1,bottom,up,0,0,0,250,0.5,mixing in place
+1,bottom,down,0,0,0,250,0.5,mixing in place
+1,bottom,up,0,0,0,250,0.5,mixing in place
+1,bottom,down,0,0,0,250,0.5,mixing in place
+1,bottom,up,0,0,0,1700,0.5,"uptaking from bottom, releasing to the top"
+5,surface,down,0,0,0,1700,0.5,"uptaking from bottom, releasing to the top"
+1,bottom,up,0,0,0,1700,0.5,"uptaking from bottom, releasing to the top"
+5,surface,down,0,0,0,1700,0.5,"uptaking from bottom, releasing to the top"
+1,bottom,up,0,0,0,1700,0.5,"uptaking from bottom, releasing to the top"
+5,surface,down,0,0,0,1700,0.5,"uptaking from bottom, releasing to the top"
+1,bottom,up,0,0,300,1700,0.5,
+5,surface,down,0,0,300,1700,0.5,
+1,bottom,up,0,0,300,1700,0.5,
+5,surface,down,0,0,300,1700,0.5,
+1,bottom,up,0,0,300,1700,0.5,
+5,surface,down,0,0,300,1700,0.5,
+1,bottom,up,0,0,500,1700,0.5,
+5,surface,down,0,0,500,1700,0.5,
+-9,surface,up,2,0,500,1700,0.5,
+-9,surface,down,2,0,500,1700,0.5,
+-7,surface,up,2,0,500,1700,0.5,
+-7,surface,down,2,0,500,1700,0.5,
+-5,surface,up,2,0,500,1700,0.5,
+-3,surface,down,2,0,500,1700,0.5,
+-3,surface,up,3,0,900,1700,0.5,
+-5,surface,down,3,0,900,1700,0.5,
+-5,surface,up,0,3,900,1700,0.5,
+-5,surface,down,0,3,900,1700,0.5,
+-5,surface,up,-3,0,900,1700,0.5,
+-5,surface,down,-3,0,900,1700,0.5,
+-5,surface,up,0,-3,900,1700,0.5,
+-5,surface,down,0,-3,900,1700,0.5,
+-5,surface,up,0,0,900,1700,0.5,
+5,surface,down,0,0,900,1700,0.5,

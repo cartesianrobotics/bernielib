@@ -6,6 +6,9 @@ import logging
 # Local files
 from samples import sample_type
 from samples import sample
+from samples import createSample
+from samples import createSamplesToPurifyList
+from samples import createPurifiedSamplesList
 from general import listSerialPorts
 from general import data
 
@@ -26,7 +29,6 @@ Sergii Pochekailov
 BAUDRATE = 115200
 TIMEOUT = 0.1   # seconds
 END_OF_LINE = "\r"
-
 
 
 class robot(data):
@@ -63,6 +65,8 @@ class robot(data):
         self.tip_attached = 0 # 0 - not attached, 1 - attached
         # Tuple that let robot remember where did it picked up its last tip
         self.last_tip_coord = None
+        # Pressure sensors zeroed near tips
+        self.load_cells_zeroed_near_tips = False
         
     
     def close(self):
@@ -170,13 +174,16 @@ class robot(data):
                 if re.search(pattern=confirm_message, string=full_message):
                     break
             self.writePipette("?")
-            
+
+        return full_message
     
     def pipetteSetSpeed(self, speed):
         self.writePipette('$110='+str(speed))
     
     
     def pipetteHome(self):
+        self.writeAndWaitPipette('$X')
+        self.pipetteMove(5)
         self.writeAndWaitPipette('$H')
         self.pipetteServoUp()
         
@@ -186,16 +193,37 @@ class robot(data):
     
     
     def pipetteMove(self, dist):
-        dist = dist * -1.0
+        dist = dist * -1.0 # Comment this if the firmware settings are changed to output positive position value
         self.writeAndWaitPipette('G0 X'+str(dist))
         
     
     def pipetteServoUp(self):
-        self.writeAndWaitPipette('M3 S90')
+        self.writeAndWaitPipette('M3 S10')
         
     
     def pipetteServoDown(self):
-        self.writeAndWaitPipette('M5')
+        self.writeAndWaitPipette('M3 S115')
+    
+    
+    def _getPipetteCurrentPosition_Raw(self):
+        """
+        Returns a raw number for the current pipette position, in absolute coordinates.
+        Beware of "-" sign; may change depending on robot current version
+        """
+        msg = self.writeAndWaitPipette("?")
+        msg1 = re.split("MPos:", msg)[1]
+        coord_str = re.split(",", msg1)[0]
+        coord = float(coord_str)
+        return coord
+    
+    def _getPipetteCurrentPosition(self):
+        """
+        Returns current pipette position in the same form as accepted by pipetteMove function.
+        Plunger shall not move if the value returned by this function is fed to pipetteMove function.
+        """
+        h = self._getPipetteCurrentPosition_Raw()
+        h = h * -1.0 # Comment this if the firmware settings are changed to output positive position value
+        return h
     
     
     def setTipLength(self, length):
@@ -211,21 +239,100 @@ class robot(data):
         This is how much longer the pipette become after attaching a tip.
         """
         return self._getSetting('added_tip_length')
+
+
+    def tipPickupAttempt(self, wrong_hit_threshold=9.5, initial_force=200, final_force=1800, final_pickup_dist=7.5):
+        Z_start = self.getPosition(axis='Z')
+        Z_calibrated = self.tips_rack.getZ()
+        Z_wrong_hit_abs = Z_calibrated - wrong_hit_threshold
+        if self.load_cells_zeroed_near_tips:
+            Z_soft = self.moveDownUntilPress(1, initial_force, z_max=Z_wrong_hit_abs, tare=False)
+        else:
+            Z_soft = self.moveDownUntilPress(1, initial_force, z_max=Z_wrong_hit_abs)
+            self.load_cells_zeroed_near_tips = True
+        if Z_soft < Z_wrong_hit_abs:
+            # Robot hit something before the tip; that means it probably missed.
+            # Retracting and ejecting tip (just in case)
+            self.move(z=Z_start)
+            self.dumpTip()
+            return False
+        else:
+            # Robot correctly got to the tip, now pressing further so the tip is firmly attached
+            self.moveAxisDelta('Z', final_pickup_dist)
+            self.moveDownUntilPress(1, final_force, tare=False)
+            return True
+
+
+    def tryTipPickupAtNextPosition(self, axis, step):
+        self.moveAxisDelta(axis, step)
+        tip_picked_up = self.tipPickupAttempt()
+        return tip_picked_up
+
+    def lookForTip(self, min_radius=0.5, max_radius=3):
+        
+        x_init = self.getPosition(axis='X')
+        y_init = self.getPosition(axis='Y')
+        z_init = self.getPosition(axis='Z')
+        
+        radius=min_radius
+        while radius < max_radius:
+            # 0 deg
+            if self.tryTipPickupAtNextPosition('X', radius):
+                return True
+            # 45 deg
+            if self.tryTipPickupAtNextPosition('Y', radius):
+                return True
+            # 90 deg
+            if self.tryTipPickupAtNextPosition('X', -radius):
+                return True
+            # 135 deg
+            if self.tryTipPickupAtNextPosition('X', -radius):
+                return True
+            # 180 deg
+            if self.tryTipPickupAtNextPosition('Y', -radius):
+                return True
+            # 225 deg
+            if self.tryTipPickupAtNextPosition('Y', -radius):
+                return True
+            # 270 deg
+            if self.tryTipPickupAtNextPosition('X', radius):
+                return True
+            # 315 deg
+            if self.tryTipPickupAtNextPosition('X', radius):
+                return True
+            radius += min_radius
+            self.move(x=x_init, y=y_init, z=z_init)
+        return False
     
     
-    def pickUpTip(self, column, row, fine_approach_dz=10, raise_z=0, raise_dz_with_tip=60):
+    def pickUpTip(self, column, row, fine_approach_dz=12.5, raise_z=0, raise_dz_with_tip=60, dx=0, dy=0):
         # Moving towards the tip
         self.moveToWell(rack_name='tips', column=column, row=row, save_height=fine_approach_dz)
-        # Moving down while controlling the pressure
-        self.moveDownUntilPress(1, 4000)
+        # Optional correction (mostly for debugging)
+        self.moveAxisDelta('X', dx)
+        self.moveAxisDelta('Y', dy)
+        # Attempting to pickup at calibrated position
+        tip_picked_up = self.tipPickupAttempt()
+        if not tip_picked_up:
+            # If hitting a tip rim (calibration off), spiralling around the calibrated position to 
+            # find the tip
+            # This is to rescue the protocol. Must recalibrate next time.
+            print("Tip calibration is off. Please recalibrate tip rack before running another protocol.")
+            self.lookForTip()
+        x, y, z = self.getPosition()
         # Moving up with the tip
         self.moveAxisDelta('Z', -raise_dz_with_tip)
         self.tip_attached = 1
         # Letting the rack know that the tip was picked from there
         self.tips_rack.consume(column, row)
+        self.last_tip_coord = (column, row)
+        return x, y, z
     
     
     def dumpTip(self):
+        """
+        Dumps the tip at current XYZ position.
+        """
         self.pipetteServoDown()
         self.pipetteMove(40)
         self.tip_attached = 0
@@ -245,6 +352,10 @@ class robot(data):
         self.tips_rack.add(column, row) # Letting tip rack know that there is a new tip there.
         self.moveToWell('tips', column, row)
     
+    def returnTipBack(self):
+        col, row = self.last_tip_coord
+        self.dumpTipToPosition(col, row)
+    
     
     def _calcExtraLength(self):
         return self.getTipLength() * self.tip_attached
@@ -254,6 +365,7 @@ class robot(data):
         col, row = self.tips_rack.next()
         self.pickUpTip(col, row)
         self.last_tip_coord = (col, row)
+        return self.last_tip_coord
 
     
     def setPipetteVolumeConstants(self, slope, intercept):
@@ -310,9 +422,68 @@ class robot(data):
                 return sample._getPipettingDelay()
             else:
                 return self._getSetting('pipetting_delay')
-                
     
-    def uptakeLiquid(self, sample, volume, lag_vol=5, dry_tube=False, in_place=False):
+
+    def _probeTubeZBottom(self, sample, step=0.2, threshold=200, V_probe=None, Z_probe=None, in_place=False):
+        """
+        Will attempt to touch tube bottom, to discover its Z coordinate.
+        Will save that coordinate to the sample settings.
+        
+        Inputs:
+            sample
+                sample object
+            step
+                mm step to approach the bottom
+            threshold
+                sensor readings at which bottom is considered touched.
+            V_probe
+                volume level at which to start the approach. If not provided, sample type settings is used
+            Z_probe
+                absolute Z coordinate at which to perform the approach. If not provided,
+                it is calculated from the volume level. 
+            in_place=False
+                if True, will not try to approach to the sample, instead will probe
+                at its current position
+            
+        """
+        # Finding volume from where to perform approach
+        # Alternatively, user can provide their own V (overrides stored data)
+        if V_probe is None:
+            V_probe = sample.stype.getCloseToBottomVol()
+        # Using volume, finding absolute Z from where to perform approach
+        # Alternatively, user can provide their own Z (overrides stored data)
+        if Z_probe is None:
+            Z_probe = sample.calcAbsLiquidLevelFromVol(V_probe, added_length=self._calcExtraLength())
+        
+        # Getting to the sample
+        if not in_place:
+            self.moveToSample(sample, z=Z_probe)
+
+        # Touching the sample bottom
+        Z_bottom = self.moveDownUntilPress(step=step, threshold=threshold)
+        
+        # Recording Z coordinate of the bottom of the given tube
+        sample.setZBottom(Z_bottom)
+        
+        # Recording for the sample that the bottom was touched
+        sample.setBottomTouched()
+        
+        return Z_bottom
+        
+    
+    def _getTubeZBottom(self, sample, in_place=False, force_probe=False):
+        """
+        Obtain tube bottom Z coordinate. Will attempt to use saved data, if not found, 
+        will attempt to touch the bottom.
+        """
+        if sample._settingPresent('tube_bottom_z') and not force_probe:
+            Z_bottom = sample.getZBottom()
+        else:
+            Z_bottom = self._probeTubeZBottom(sample, in_place=in_place)
+        return Z_bottom
+    
+    
+    def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, in_place=False):
         """
         Uptakes selected amount of liquid from the sample.
             Inputs:
@@ -330,6 +501,9 @@ class robot(data):
                     tube is <= uptake volume. Otherwise robot will automatically turn it back to False
                 in_place
                     If True, the robot will uptake liquid right where it is, without adjusting XYZ coordinates.
+                v_insert_override
+                    If specified, the robot will insert the tip to this volume, ignoring everyting else.
+                    Specifying 0 will get to the perseived bottom of the tube
         """
         
         pipetting_delay = self.getPipetteDelay(sample=sample)
@@ -340,9 +514,15 @@ class robot(data):
         # Correcting for upward lag
         self.movePipetteToVolume(volume+lag_vol_down)
         
-        if sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
-            # write low volume uptake procedure
-            pass
+        if v_insert_override is not None:
+            # Inserting height is manually specified. Used for instance for pipetting up and down
+            z_immers = sample.calcAbsLiquidLevelFromVol(v_insert_override, added_length=self._calcExtraLength())
+            if not in_place:
+                self.moveToSample(sample, z=z_immers)
+            self.movePipetteToVolume(0)
+            time.sleep(pipetting_delay)
+            self.movePipetteToVolume(lag_vol_down)
+        elif sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
             # Moving to the critical volume
             vol_to_immers_approx = sample.stype.getCloseToBottomVol()
             z_immers_approx = sample.calcAbsLiquidLevelFromVol(vol_to_immers_approx, 
@@ -530,21 +710,216 @@ class robot(data):
             self.moveToSample(sample)
                 
         
+    def _pipetteUpAndDownInPlace(self, delay, times):
+        """
+        Move plunger up and down. Plunger is expected to be in the "down" position at the beginning.
+        """
+        # Starting with plunger at the bottom
+        # Figuring current plunger position
+        h = self._getPipetteCurrentPosition()
+        for i in range(times):
+            self.pipetteMove(0) # Moving up
+            time.sleep(delay)
+            self.pipetteMove(h) # Moving back down
+            time.sleep(delay)
 
-    def pipetteUpAndDown(self, sample, v_uptake, repeats):
+
+    def pipetteUpAndDown(self, sample, v_uptake=200, repeats=1, dx=0, dy=0, v_in=None):
         """
         Pipette sample up and down
+        
+        Inputs:
+            sample
+                Object of a sample class
+            v_uptake
+                Volume to uptake while performing pipetting up and down
+            repeats
+                times to pipette up and down
+            dx, dy
+                Coordinates relative to the center of the sample where the mixing will happen
+            v_in
+                Volume to insert the tip into the tube. Overrides automatic volume selection
+                based on the liquid volume
         """
         
+        # Making sure there is enough liquid in the sample
+        v_in = sample.getVolume()
+        v_max = sample.stype.getMaxVolume()
+        z_max = sample.calcAbsLiquidLevelFromVol(v_max, added_length=self._calcExtraLength())
+        z_just_above_liquid = sample.calcAbsLiquidLevelFromVol(v_in*1.2, added_length=self._calcExtraLength())
+        
+        if v_uptake > v_in * 0.8:
+            v_uptake = v_in * 0.8
+        
+        repeats = repeats-1
+        
         self.uptakeLiquid(sample, v_uptake, lag_vol=0)
+        self.moveAxisDelta('X', dx)
+        self.moveAxisDelta('Y', dy)
         for i in range(repeats):
             self.dispenseLiquid(sample, v_uptake, plunger_retract=False, move_up_after=False, in_place=True)
             self.uptakeLiquid(sample, v_uptake, lag_vol=0, in_place=True)
+        self.moveAxisDelta('X', -dx)
+        self.moveAxisDelta('Y', -dy)
         self.dispenseLiquid(sample, 200, blow_extra=True)
+
+
+    def mix(self, sample, scenario=None, times=3, v_uptake=200, mix_delay=0.5):
+        v_inside = sample.getVolume()
+        if v_uptake > v_inside:
+            v_uptake = v_inside
+        
+        if scenario is None:
+            print ("Not implemented") # TODO: sample should store the mixing scenario
+            return
+            #scenario = sample.getMixScenario()
+        
+        self.movePipetteToVolume(v_uptake)
+        
+        for v, points_dict in scenario.items():
+            z_immers = sample.calcAbsLiquidLevelFromVol(v, added_length=self._calcExtraLength())
+            self.moveToSample(sample, z=z_immers)
+            
+            for point_id, xy_rel_coord_dict in points_dict.items():
+                dx = xy_rel_coord_dict['X']
+                dy = xy_rel_coord_dict['Y']
+                
+                self.moveAxisDelta('X', dx)
+                self.moveAxisDelta('Y', dy)
+                
+                self._pipetteUpAndDownInPlace(delay=mix_delay, times=times)
+                
+                self.moveAxisDelta('X', -dx)
+                self.moveAxisDelta('Y', -dy)
+            
+        v_max = sample.stype.getMaxVolume()
+        z_out = sample.calcAbsLiquidLevelFromVol(v_max, added_length=self._calcExtraLength())
+        self.moveToSample(sample, z=z_out)
+        self.pipetteMove(40)
+        time.sleep(mix_delay)
+        # Moving pipette to the top
+        self.pipetteMove(0)
+        
+
+    def mixByScript(self, sample, script, vol_uptake_fraction=0.8):
+        """
+        Mixes liquid in the sample according to provided script.
+        
+        Inputs:
+            sample
+                Sample object
+            script
+                Pandas DataFrame object containing table of movements that needs to be done
+                to perform mixing.
+            vol_uptake_fraction=0.8
+                Indicates the persentage of liquid inside the tube to perform mixing with.
+        """
+        
+        # Obtaining sample properties
+        # Liquid volume currently inside the tube
+        v_in = sample.getVolume()
+        # Maximum volume that the tube may have
+        v_max = sample.stype.getMaxVolume()
+        # Absolute Z coordinate of the surface of the liquid in the tube.
+        z_liquid = sample.calcAbsLiquidLevelFromVol(v_in, added_length=self._calcExtraLength())
+        # Absolute Z coordinate of the hypothetical surface when tube is full.
+        z_max = sample.calcAbsLiquidLevelFromVol(v_max, added_length=self._calcExtraLength())
+        
+        number_of_steps = script.shape[0]
+        # Cycling through each movement (mixing step)
+        for step in range(number_of_steps):
+            #print ("Executing step ", step)
+            step_params = script.loc[step]
+            # Unpacking parameters of the current step
+            h = step_params.Height
+            h_relative_to = step_params.H_relative_to
+            plunger_position = step_params.Plunger_pos
+            dx = step_params.dx
+            dy = step_params.dy
+            condition_v_min = step_params.min_vol_condition
+            condition_v_max = step_params.max_vol_condition
+            d = step_params.delay
+
+            # Do I need to skip this step entirely?
+            if v_in > condition_v_min and v_in < condition_v_max:
+                # Performing the step
+                # Figuring out absolute Z of the operation. If necessary, will probe the tube bottom.
+                if h_relative_to == 'top':
+                    z = z_max + h # Getting deeper into the tube compared to the tube top. Positive -> deeper
+                elif h_relative_to == 'bottom':
+                    z_bottom = self._getTubeZBottom(sample)
+                    z = z_bottom - h # Above the absolute Z of the tube.
+                elif h_relative_to == 'surface':
+                    z = z_liquid - h # Above the surface level
+                else:
+                    print ("Please provide valid H_relative_to value. Valid values are top, bottom, surface.")
+                    
+                # Identifying uptake volume
+                v_uptake = v_in * vol_uptake_fraction
+                if v_uptake > 200:
+                    v_uptake = 200
+                
+                if plunger_position == 'up':
+                    p = 0
+                elif plunger_position == 'down':
+                    p = self.calcPipettePositionFromVolume(v_uptake)
+                else:
+                    print ("Please provide valid Plunger_pos value. Valid values are up and down.")
+                
+                # Moving to the position for the operation
+                self.moveToSample(sample, z=z, z_hop=0)
+                self.moveAxisDelta('X', dx)
+                self.moveAxisDelta('Y', dy)
+                
+                # Performing pipette operation (actual mixing)
+                self.pipetteMove(p)
+                time.sleep(d)
+                
+                # Moving back x and y:
+                self.moveAxisDelta('X', -dx)
+                self.moveAxisDelta('Y', -dy)
+                
+                # Step finished. Now getting to the next step.
+                
+        #Purging at the end of the mixing
+        # Moving to the top of the sample
+        self.moveToSample(sample, z=z_max, z_hop=0)
+        # Moving plunger all the way down to remove any residual liquid in the tip
+        self.pipetteMove(40)
+        # Waiting for all the liquid to drop
+        time.sleep(d)
+        # Touching tube wall to remove any remaining droplets
+        self.touchWall(sample)
+        # Moving pipette plunger all the way up.
+        self.pipetteMove(0)
+
         
 
     def transferLiquid(self, source, destination, volume, lag_vol=5, dry_tube=False, v_immerse_dispense=100,
-                       touch_wall=True, safe_z=0):
+                       touch_wall=True, safe_z=50):
+        """
+        Transfer liquid from one source tube to the other destination tube.
+        Extra air will be blown to the destination tube to ensure all the liquid from the tip gets to the tube.
+        
+        Inputs
+            source
+                Object of a source sample, from where to transfer liquid
+            destionation
+                Object of a destination sample, one to where liquid shall be transferred.
+            volume
+                Liquid volume, in microliters
+            lag_vol
+                The extra volume that robot will intake and dispense back to the source sample
+                to account for mechanical movement lag
+            dry_tube
+                If True, will attempt to remove all liquid from the source. Default False
+            v_immerse_dispense
+                Volume mark at the destination tube at which liquid will be dispensed.
+            touch_wall
+                When pipetting, robot will touch wall of a destination tube to drop a remaining liquid.
+            safe_z=50
+                When transferring, robot will lift Z axis to that absolute value.
+        """
         # Generating list of volumes. Entire volume may be impossible to transfer one time
         v_list = []
         for i in range(int(volume // 200)):
@@ -601,8 +976,9 @@ class robot(data):
         self.writeAndWaitMisc('P off')
         
         
-    def rackMoveMagnetsAngle(self, angle):
+    def rackMoveMagnetsAngle(self, angle, delay=1.5):
         self.writeAndWaitMisc('G0 '+str(angle))
+        time.sleep(delay)
 
         
     def setMagnetsAwayAngle(self, angle):
@@ -635,6 +1011,28 @@ class robot(data):
         if poweroff:
             self.rackPowerOff()
 
+
+    def setBeadsVolumeCoef(self, a, b, c):
+        """
+        Sets coefficients for calculating beads volume needed to add to the sample.
+        Calculations happen like this:
+        v_beads = v_sample * coef
+        coef = a + b / DNA_cutoff + c / DNA_cutoff ** 2
+        """
+        self._setSetting('DNAsize_to_Vbeads', {'a': a, 'b': b, 'c': c})
+        
+    def getBeadsVolumeCoef(self):
+        coef_dict = self._getSetting('DNAsize_to_Vbeads')
+        a = coef_dict['a']
+        b = coef_dict['b']
+        c = coef_dict['c']
+        return a, b, c
+        
+    def calcBeadsVol(self, sample, cutoff):
+        v = sample.getVolume()
+        a, b, c = self.getBeadsVolumeCoef()
+        multiplier = a + b / cutoff + c / cutoff ** 2
+        return v * multiplier
             
 # ===========================================================================
 # Cartesian robot functions
@@ -677,7 +1075,7 @@ class robot(data):
         if axis == 'X' or axis == 'Y':
             speed = 6000
         elif axis == 'Z':
-            speed = 1000
+            speed = 3000
         else:
             print("Wrong axis provided.")
             return
@@ -766,7 +1164,8 @@ class robot(data):
     
     def moveAxis(self, axis, dist, speed=None):
         axis = axis.upper()
-        speed = self.getSpeed(axis)
+        if speed is None:
+            speed = self.getSpeed(axis)
         self.writeAndWaitCartesian('G0 '+axis+str(dist)+' F'+str(speed))
     
 
@@ -780,6 +1179,14 @@ class robot(data):
     
 
     def getPosition(self, axis=None):
+        """
+        Returns current robot position.
+        
+        Inputs:
+            axis=None
+                If specified as 'X', 'Y' or 'Z', will return the position only 
+                at this axis. Otherwise, will return a tuple of (X, Y, Z) positions.
+        """
         msg = self.writeAndWaitCartesian("M114")
         msg_list = re.split(pattern=' ', string=msg)
         x_str = msg_list[0]
@@ -802,8 +1209,28 @@ class robot(data):
             return x, y, z
 
         
-    def moveDownUntilPress(self, step, threshold, z_max=180):
-        self.tareAll()
+    def moveDownUntilPress(self, step, threshold, z_max=180, tare=True):
+        """
+        Moves Z axis down one small step at a time, until specified pressure threshold is reached.
+        
+        Inputs:
+            step
+                Distance Z axis would travel in one step, mm.
+            threshold
+                Desired pressure detected by the load sensors. Approximately grams.
+                Specify 100-500 for soft touch, 2000-5000 for tip pickup
+            z_max=180
+                maximum Z coordinate to lower. If reached, function exits
+            tare=True
+                If True, will zero the sensors before lowering. This takes 1-2 seconds.
+                User is responsible to tare sensors previously if they decided to provide False value
+        
+        Returns
+            z coordinate at which threshold pressure is reached (i.e., coordinates at which robot 
+            touched something with desired force).
+        """
+        if tare:
+            self.tareAll()
         z = self.getPosition(axis='Z')
         z_init = z
         while ((self.getCombinedLoad()) < threshold) and (self.getPosition(axis='Z') < z_max):
@@ -843,13 +1270,26 @@ class robot(data):
         return self.getPosition()
 
 
-    def moveToSample(self, sample, z=None):
+    def moveToSample(self, sample, z=None, z_hop=10):
+        """
+        Moves XYZ towards a specified sample.
+        
+        Inputs:
+            sample
+                A sample object. Must be defined prior using bernielib.createSample function
+                or a specialized functions for certain custom sample
+            z
+                Absolute coordinate to which to lower Z axis. Default is None, 
+                the value is taken from sample object as the top of the sample.
+            z_hop
+                Level at which to raise Z above the sample safe Z.
+        """
         x, y = sample.getCenterXY()
         if z is None:
             z = sample.getSampleTopAbsZ(added_length=self._calcExtraLength())
         # Checking whether the tip is below the safe position
         z_current = self.getPosition(axis='Z')
-        z_safe = z - 10
+        z_safe = z - z_hop
         if z_current > z_safe:
             self.moveAxis(axis='Z', dist=z_safe)
         self.move(x, y, z, z_first=False)
@@ -954,7 +1394,7 @@ class robot(data):
         return center
 
 
-    def _findCenterXY(self, x1, x2, y1, y2, how):
+    def _findCenterXY(self, x1, x2, y1, y2, how, lift_z):
         """
         Using coordinates of the object edge, find a center of this object
         """
@@ -1003,7 +1443,7 @@ class robot(data):
         lift_z = r.getCalibrationLiftZ()
         
         # Finding object center
-        x_center, y_center = self._findCenterXY(x1, x2, y1, y2, how)
+        x_center, y_center = self._findCenterXY(x1, x2, y1, y2, how, lift_z)
         
         # Depends on whether robot found a center of the rack, or a center of the well, 
         # the center of the rack is calculated and saved.
