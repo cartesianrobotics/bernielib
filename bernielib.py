@@ -13,7 +13,8 @@ from general import listSerialPorts
 from general import data
 
 
-#TODO: Tip end correction
+# TODO: Figure out how to make smoothieware send a signal for physically finishing the job
+# TODO: Tip end correction
 
 
 """
@@ -36,7 +37,7 @@ class robot(data):
     Handles all robot operations
     """
     
-    def __init__ (self, cartesian_port_name, pipette_port_name, misc_port_name):
+    def __init__ (self, cartesian_port_name, pipette_port_name, loadcell_port_name):
         
         
         super().__init__(name='robot')
@@ -51,15 +52,20 @@ class robot(data):
         
         # Opening communications
         self.cartesian_port = serial.Serial(cartesian_port_name, BAUDRATE, timeout=TIMEOUT)
+        # TODO: remove, as pipette is now handled with smoothieboard.
         self.pipette_port = serial.Serial(pipette_port_name, BAUDRATE, timeout=TIMEOUT)
-        self.misc_port = serial.Serial(misc_port_name, BAUDRATE, timeout=TIMEOUT)
+        # Opening port for arduino board that manages load cells.
+        # At the moment, I do not have smoothieware able to communicate with the load cells. 
+        # FIRMWARE TODO: write module for smoothieware that communicates with load cells.
+        # ELECTRONICS TODO: Remove load cell arduino and USB hub; shrink the electronics box
+        self.loadcell_port = serial.Serial(loadcell_port_name, BAUDRATE, timeout=TIMEOUT)
         
         # Waiting for ports to open
         time.sleep(1)
         
         self.cartesian_port.flushInput()
         self.pipette_port.flushInput()
-        self.misc_port.flushInput()
+        self.loadcell_port.flushInput()
         
         # Starting with tip not attached
         self.tip_attached = 0 # 0 - not attached, 1 - attached
@@ -74,12 +80,13 @@ class robot(data):
             self.cartesian_port.close()
         except:
             pass
+        # TODO: remove, as pipette is now handled with smoothieboard.
         try:
             self.pipette_port.close()
         except:
             pass
         try:
-            self.misc_port.close()
+            self.loadcell_port.close()
         except:
             pass
     
@@ -87,7 +94,7 @@ class robot(data):
     
     
     def _readAll(self, port):
-        time.sleep(0.05)
+        time.sleep(0.001)
         message = ''
         while port.inWaiting():
             message += port.read(1).decode("utf-8")
@@ -113,8 +120,8 @@ class robot(data):
         port.write(expr_enc)
     
         
-    def writeMisc(self, expression):
-        self._write(port=self.misc_port, expression=expression, eol='')
+    def writeLoadCell(self, expression):
+        self._write(port=self.loadcell_port, expression=expression, eol='')
     
         
     def _writeAndWait(self, port, expression, eol, confirm_message):
@@ -123,8 +130,8 @@ class robot(data):
         return message
         
     
-    def writeAndWaitMisc(self, expression):
-        return self._writeAndWait(port=self.misc_port, expression=expression, eol='', confirm_message='\r\n')
+    def writeAndWaitLoadCell(self, expression):
+        return self._writeAndWait(port=self.loadcell_port, expression=expression, eol='', confirm_message='\r\n')
 
 
     def _getRackObjectByName(self, rack_name):
@@ -150,11 +157,11 @@ class robot(data):
 # ==========================================================================================
 # Pipette functions
     
-
+    # TODO: remove, as pipette is now handled with smoothieboard.
     def writePipette(self, expression):
         self._write(port=self.pipette_port, expression=expression, eol='\r')    
     
-    
+    # TODO: remove, as pipette is now handled with smoothieboard.
     def writeAndWaitPipette(self, expression, confirm_message="Idle"):
         """
         Function will write an expression to the device and wait for the proper response.
@@ -177,34 +184,35 @@ class robot(data):
 
         return full_message
     
+    # TODO: Create a settings file for the pipette speed; merge with new pipette management functions
     def pipetteSetSpeed(self, speed):
         self.writePipette('$110='+str(speed))
     
-    
+    # TODO: Rework for smoothieware
     def pipetteHome(self):
         self.writeAndWaitPipette('$X')
         self.pipetteMove(5)
         self.writeAndWaitPipette('$H')
         self.pipetteServoUp()
         
-    
+    # TODO: Check if needed at all
     def pipetteUnlock(self):
         self.writeAndWaitPipette('$X')
     
-    
+    # TODO: Rework for smoothieware
     def pipetteMove(self, dist):
         dist = dist * -1.0 # Comment this if the firmware settings are changed to output positive position value
         self.writeAndWaitPipette('G0 X'+str(dist))
         
-    
+    # TODO: Rework for smoothieware
     def pipetteServoUp(self):
         self.writeAndWaitPipette('M3 S10')
         
-    
+    # TODO: Rework for smoothieware
     def pipetteServoDown(self):
         self.writeAndWaitPipette('M3 S115')
     
-    
+    # TODO: Rework for smoothieware
     def _getPipetteCurrentPosition_Raw(self):
         """
         Returns a raw number for the current pipette position, in absolute coordinates.
@@ -216,6 +224,7 @@ class robot(data):
         coord = float(coord_str)
         return coord
     
+    # TODO: Rework for smoothieware
     def _getPipetteCurrentPosition(self):
         """
         Returns current pipette position in the same form as accepted by pipetteMove function.
@@ -390,7 +399,8 @@ class robot(data):
         slope = self._getSetting('volume_to_position_slope')
         intercept = self._getSetting('volume_to_position_intercept')
         return slope, intercept
-        
+    
+    # TODO: Unit tests for this
     def calcPipettePositionFromVolume(self, volume):
         """
         Re-calculates volume (in uL) into plunger position
@@ -943,15 +953,15 @@ class robot(data):
     
     
     def tareAll(self):
-        self.writeMisc('T')
+        self.writeLoadCell('T')
     
     
     def readRightLoad(self):
-        return float(self.writeAndWaitMisc('RR').strip())
+        return float(self.writeAndWaitLoadCell('RR').strip())
     
     
     def readLeftLoad(self):
-        return float(self.writeAndWaitMisc('RL').strip())
+        return float(self.writeAndWaitLoadCell('RL').strip())
     
 
     def getCombinedLoad(self):
@@ -967,15 +977,15 @@ class robot(data):
 # ===================================================================================
 # Magnetic rack functions
     
-    
+    # TODO: Rework for smoothieware
     def rackPowerOn(self):
         self.writeAndWaitMisc('P on')
     
-    
+    # TODO: Rework for smoothieware
     def rackPowerOff(self):
         self.writeAndWaitMisc('P off')
         
-        
+    # TODO: Rework for smoothieware    
     def rackMoveMagnetsAngle(self, angle, delay=1.5):
         self.writeAndWaitMisc('G0 '+str(angle))
         time.sleep(delay)
@@ -1041,7 +1051,7 @@ class robot(data):
     def writeCartesian(self, expression):
         self._write(port=self.cartesian_port, expression=expression, eol='\r')
 
-
+    # TODO: smoothie must report about physically finishing the job, probably here.
     def writeAndWaitCartesian(self, expression):
         return self._writeAndWait(port=self.cartesian_port, expression=expression, eol='\r', confirm_message='ok\n')
 
@@ -1058,7 +1068,7 @@ class robot(data):
             self.pipetteHome()
             self.moveMagnetsAway()
             
-    
+    # TODO: Rework for Smoothieware
     def robotHome(self, axis=None):
         try:
             axis = axis.upper()
@@ -1070,7 +1080,7 @@ class robot(data):
         else:
             self.writeAndWaitCartesian('G28 '+axis)
     
-    
+    # TODO: Make speed a loadable parameter
     def getSpeed(self, axis):
         if axis == 'X' or axis == 'Y':
             speed = 6000
@@ -1106,7 +1116,7 @@ class robot(data):
             print (full_cmd)
             return
 
-
+    # TODO: this function must be able to move all axis simultaneously (x, y, z, a)
     def move(self, x=None, y=None, z=None, z_first=True, speed_xy=None, speed_z=None):
         """
         Move robot to a new position with given absolute coordinates.
