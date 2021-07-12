@@ -14,6 +14,8 @@ from general import data
 
 
 # TODO: Figure out how to make smoothieware send a signal for physically finishing the job
+# TODO: Create settings for which COM port associates with which part of electronics
+# (which one is for smoothieboard, which one is for the load cells)
 # TODO: Tip end correction
 
 
@@ -37,7 +39,7 @@ class robot(data):
     Handles all robot operations
     """
     
-    def __init__ (self, cartesian_port_name, pipette_port_name, loadcell_port_name):
+    def __init__ (self, cartesian_port_name, loadcell_port_name):
         
         
         super().__init__(name='robot')
@@ -52,8 +54,6 @@ class robot(data):
         
         # Opening communications
         self.cartesian_port = serial.Serial(cartesian_port_name, BAUDRATE, timeout=TIMEOUT)
-        # TODO: remove, as pipette is now handled with smoothieboard.
-        self.pipette_port = serial.Serial(pipette_port_name, BAUDRATE, timeout=TIMEOUT)
         # Opening port for arduino board that manages load cells.
         # At the moment, I do not have smoothieware able to communicate with the load cells. 
         # FIRMWARE TODO: write module for smoothieware that communicates with load cells.
@@ -64,7 +64,6 @@ class robot(data):
         time.sleep(1)
         
         self.cartesian_port.flushInput()
-        self.pipette_port.flushInput()
         self.loadcell_port.flushInput()
         
         # Starting with tip not attached
@@ -78,11 +77,6 @@ class robot(data):
     def close(self):
         try:
             self.cartesian_port.close()
-        except:
-            pass
-        # TODO: remove, as pipette is now handled with smoothieboard.
-        try:
-            self.pipette_port.close()
         except:
             pass
         try:
@@ -1060,7 +1054,7 @@ class robot(data):
         if part == 'robot':
             self.robotHome()
         elif part == 'pipette':
-            self.pipetteHome()
+            self.robotHome(axis='A')
         elif part == 'magrack':
             self.moveMagnetsAway()
         else:
@@ -1075,10 +1069,10 @@ class robot(data):
         except:
             pass
         if axis is None:
-            self.writeAndWaitCartesian('G28 Z')
-            self.writeAndWaitCartesian('G28 XY')
+            self.writeAndWaitCartesian('$H')        # Homing all axes (X, Y, Z, and pipette)
         else:
-            self.writeAndWaitCartesian('G28 '+axis)
+            self.writeAndWaitCartesian('G28.2 '+axis)  # Homing one axis only
+        self.writeAndWaitCartesian('M400')          # Waiting for the end of movement
     
     # TODO: Make speed a loadable parameter
     def getSpeed(self, axis):
