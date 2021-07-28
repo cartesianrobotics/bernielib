@@ -151,6 +151,12 @@ class sample_type(data):
 class sample(data):
     """
     Class handling samples
+    
+    Class Q&A:
+        Does the class has rack information?
+            Yes, there are functions responsible for placing and removing sample to a rack.
+            The rack object is passed and retrieved.
+            Sample can be only in one rack at a time, the rack object is stored in self.rack
     """
     
     def __init__(self, sname, stype, volume=None):
@@ -323,6 +329,11 @@ class sample(data):
 
 
 def createSample(type_name, sample_name, rack, pos_col, pos_row, volume, purge=True):
+
+    if sample_name == 'waste':
+        print("You can't use this sample_name, because it interferes with the internal settings.")
+        print("Please chose different sample_name.")
+        return
     stype = sample_type(type_name)
     s = sample(sample_name, stype)
     if purge:

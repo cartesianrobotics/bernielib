@@ -151,82 +151,121 @@ class robot(data):
 # ==========================================================================================
 # Pipette functions
     
-    # TODO: remove, as pipette is now handled with smoothieboard.
     def writePipette(self, expression):
-        self._write(port=self.pipette_port, expression=expression, eol='\r')    
+        """
+        TODO:
+        Left for compatibility, to be removed.
+        """
+        self._write(port=self.cartesian_port, expression=expression, eol='\r')    
     
-    # TODO: remove, as pipette is now handled with smoothieboard.
     def writeAndWaitPipette(self, expression, confirm_message="Idle"):
         """
-        Function will write an expression to the device and wait for the proper response.
-        
-        Use this function to make the devise perform a physical operation and
-        make sure program continues after the operation is physically completed.
-        
-        Function will return an output message
+        Same as writeAndWaitCartesian.
+        Left for compatibility.
+        TODO: to be removed
         """
-        self.writePipette(expression)
+        return self.writeAndWaitCartesian(expression)
         
-        full_message = ""
-        while True:
-            message = self._readAll(self.pipette_port)
-            if message != "":
-                full_message += message
-                if re.search(pattern=confirm_message, string=full_message):
-                    break
-            self.writePipette("?")
-
-        return full_message
-    
-    # TODO: Create a settings file for the pipette speed; merge with new pipette management functions
     def pipetteSetSpeed(self, speed):
-        self.writePipette('$110='+str(speed))
+        """
+        Same as self.setSpeedPipette(speed)
+        """
+        self.setSpeedPipette(speed)
     
-    # TODO: Rework for smoothieware
     def pipetteHome(self):
-        self.writeAndWaitPipette('$X')
-        self.pipetteMove(5)
-        self.writeAndWaitPipette('$H')
-        self.pipetteServoUp()
-        
-    # TODO: Check if needed at all
-    def pipetteUnlock(self):
-        self.writeAndWaitPipette('$X')
+        """
+        Same as self.home(part='pipette')
+        """
+        self.home(part='pipette')
     
-    # TODO: Rework for smoothieware
     def pipetteMove(self, dist):
-        dist = dist * -1.0 # Comment this if the firmware settings are changed to output positive position value
-        self.writeAndWaitPipette('G0 X'+str(dist))
-        
-    # TODO: Rework for smoothieware
-    def pipetteServoUp(self):
-        self.writeAndWaitPipette('M3 S10')
-        
-    # TODO: Rework for smoothieware
-    def pipetteServoDown(self):
-        self.writeAndWaitPipette('M3 S115')
+        self.moveAxis('A', dist)
     
-    # TODO: Rework for smoothieware
-    def _getPipetteCurrentPosition_Raw(self):
+    def pipetteServoPowerUp(self):
         """
-        Returns a raw number for the current pipette position, in absolute coordinates.
-        Beware of "-" sign; may change depending on robot current version
+        Powers pipette servo up.
+        The servo will be moved to the position specified by movePipetteServoAngle() function,
+        or the default position.
         """
-        msg = self.writeAndWaitPipette("?")
-        msg1 = re.split("MPos:", msg)[1]
-        coord_str = re.split(",", msg1)[0]
-        coord = float(coord_str)
-        return coord
+        self.writeAndWaitCartesian('M42')   # Turns power on
+        self.writeAndWaitCartesian('M400')  # Waits for all commands to complete
+        
+    def pipetteServoPowerDown(self):
+        """
+        Powers pipette servo down.
+        """
+        self.writeAndWaitCartesian('M43')   # Turns power off
+        self.writeAndWaitCartesian('M400')  # Waits for all commands to complete
     
-    # TODO: Rework for smoothieware
+    def movePipetteServoAngle(self, angle, delay=0.2):
+        """
+        Moves the servo to the specified angle.
+        Angle is NOT in degrees, but in the arbitrary values.
+        Specify angle=2.5 for the servo horn to be parallel to the ground (no tip dispence)
+        Speficy angle=7.3 for the servo horn to be vertical (tip will be dropped when plunger moves down).
+        
+        This function will not change the servo power; use pipetteServoPowerUp and pipetteServoPowerDown functions.
+        """
+        self.writeAndWaitCartesian('M400')                  # Waits for all commands to complete
+        self.writeAndWaitCartesian('M280.1 S'+str(angle))   # Sends the command to move the servo
+        self.writeAndWaitCartesian('M400')                  # Waits for all commands to complete
+        time.sleep(delay)                                   # Waits for servo to physically move
+                                                            # Smoothieboard does not read servo position
+        
+    
+    def pipetteServoUp(self, poweroff=True):
+        """
+        Moves pipette servo to "disengaged" position. The tip will not drop when plunger moves down.
+        """
+        angle = self.getTipDropServoUpAngle()
+        self.pipetteServoPowerUp()
+        self.movePipetteServoAngle(angle)
+        if poweroff:
+            self.pipetteServoPowerDown()
+        
+    
+    def pipetteServoDown(self, poweroff=False):
+        """
+        Moves pipette servo to "engaged" position. The tip will drop when plunger moves down.
+        """
+        angle = self.getTipDropServoDownAngle()
+        self.pipetteServoPowerUp()
+        self.movePipetteServoAngle(angle)
+        if poweroff:
+            self.pipetteServoPowerDown()
+    
+    
+    def setTipDropServoUpAngle(self, angle):
+        """
+        Sets "angle" (arbitrary units), at which the servo horn will be parallel to the ground.
+        The plunger will not dispence the attached tip when servo is in this position.
+        Arbitrary units, specify range between about 2 to 10.
+        """
+        self._setSetting('tip_drop_servo_up_angle', angle)
+    
+    
+    def setTipDropServoDownAngle(self, angle):
+        """
+        Sets "angle" (arbitrary units), at which the servo horn will be perpendicular to the ground.
+        The plunger will drop the attached tip when servo is in this position.
+        Arbitrary units, specify range between about 2 to 10.
+        """
+        self._setSetting('tip_drop_servo_down_angle', angle)
+    
+    
+    def getTipDropServoUpAngle(self):
+        return self._getSetting('tip_drop_servo_up_angle')
+        
+    
+    def getTipDropServoDownAngle(self):
+        return self._getSetting('tip_drop_servo_down_angle')
+    
     def _getPipetteCurrentPosition(self):
         """
         Returns current pipette position in the same form as accepted by pipetteMove function.
         Plunger shall not move if the value returned by this function is fed to pipetteMove function.
         """
-        h = self._getPipetteCurrentPosition_Raw()
-        h = h * -1.0 # Comment this if the firmware settings are changed to output positive position value
-        return h
+        return self.getPosition('A')
     
     
     def setTipLength(self, length):
@@ -244,7 +283,7 @@ class robot(data):
         return self._getSetting('added_tip_length')
 
 
-    def tipPickupAttempt(self, wrong_hit_threshold=9.5, initial_force=200, final_force=1800, final_pickup_dist=7.5):
+    def tipPickupAttempt(self, wrong_hit_threshold=9.5, initial_force=100, final_force=1000, final_pickup_dist=7.5):
         Z_start = self.getPosition(axis='Z')
         Z_calibrated = self.tips_rack.getZ()
         Z_wrong_hit_abs = Z_calibrated - wrong_hit_threshold
@@ -322,7 +361,7 @@ class robot(data):
             # This is to rescue the protocol. Must recalibrate next time.
             print("Tip calibration is off. Please recalibrate tip rack before running another protocol.")
             self.lookForTip()
-        x, y, z = self.getPosition()
+        x, y, z, a = self.getPosition()
         # Moving up with the tip
         self.moveAxisDelta('Z', -raise_dz_with_tip)
         self.tip_attached = 1
@@ -337,7 +376,7 @@ class robot(data):
         Dumps the tip at current XYZ position.
         """
         self.pipetteServoDown()
-        self.pipetteMove(40)
+        self.pipetteMove(self._getDumpTipPlungerMovement())
         self.tip_attached = 0
         self.pipetteMove(1)
         self.pipetteServoUp()
@@ -354,6 +393,13 @@ class robot(data):
         self.dumpTip()
         self.tips_rack.add(column, row) # Letting tip rack know that there is a new tip there.
         self.moveToWell('tips', column, row)
+    
+    def _setDumpTipPlungerMovement(self, plunger_movement):
+        self._setSetting('plunger_movement_when_dumping_tip', plunger_movement)
+        
+    def _getDumpTipPlungerMovement(self):
+        return self._getSetting('plunger_movement_when_dumping_tip')
+    
     
     def returnTipBack(self):
         col, row = self.last_tip_coord
@@ -973,16 +1019,27 @@ class robot(data):
     
     # TODO: Rework for smoothieware
     def rackPowerOn(self):
-        self.writeAndWaitMisc('P on')
+        self.writeAndWaitCartesian('M106')
     
     # TODO: Rework for smoothieware
     def rackPowerOff(self):
-        self.writeAndWaitMisc('P off')
+        self.writeAndWaitCartesian('M107')
         
     # TODO: Rework for smoothieware    
     def rackMoveMagnetsAngle(self, angle, delay=1.5):
-        self.writeAndWaitMisc('G0 '+str(angle))
-        time.sleep(delay)
+        """
+        Turns servo with magnets on specified angle.
+        Angle is set in the arbitrary number, NOT in degrees.
+        5.2 is the minimum; magnet lever will be in the lowermost position, away from the tubes.
+        11.2 is the maximum, magnet lever will be in the uppermost position, closest to the tubes.
+        
+        This function does not change the servo power, use rackPowerOn and rackPowerOff for that.
+        """
+        self.writeAndWaitCartesian('M400')              # Command to wait until all the commands are finished.
+        self.writeAndWaitCartesian('M280 S'+str(angle)) # Command to turn the servo
+        self.writeAndWaitCartesian('M400')              # Command to wait until all the commands are finished.
+        time.sleep(delay)                               # Wait for servo to actually turn
+                                                        # Smoothieboard does not have any feedback from the servo.
 
         
     def setMagnetsAwayAngle(self, angle):
@@ -1001,15 +1058,14 @@ class robot(data):
         return self._getSetting('magnets_near_tube_angle')
     
     
-    def moveMagnetsAway(self, poweroff=False):
+    def moveMagnetsAway(self, poweroff=True):
         self.rackPowerOn()
         self.rackMoveMagnetsAngle(self.getMagnetsAwayAngle())
         if poweroff:
-            #time.sleep(1)
             self.rackPowerOff()
     
     
-    def moveMagnetsTowardsTube(self, poweroff=False):
+    def moveMagnetsTowardsTube(self, poweroff=True):
         self.rackPowerOn()
         self.rackMoveMagnetsAngle(self.getMagnetsNearTubeAngle())
         if poweroff:
@@ -1055,12 +1111,14 @@ class robot(data):
             self.robotHome()
         elif part == 'pipette':
             self.robotHome(axis='A')
+            self.pipetteServoUp()
         elif part == 'magrack':
             self.moveMagnetsAway()
         else:
             self.robotHome()
-            self.pipetteHome()
             self.moveMagnetsAway()
+            self.pipetteServoUp()
+        self.powerStepperOff('A')
             
     # TODO: Rework for Smoothieware
     def robotHome(self, axis=None):
@@ -1074,12 +1132,33 @@ class robot(data):
             self.writeAndWaitCartesian('G28.2 '+axis)  # Homing one axis only
         self.writeAndWaitCartesian('M400')          # Waiting for the end of movement
     
+    def setSpeedXY(self, speed):
+        self._setSetting('speed_XY', speed)
+        
+    def getSpeedXY(self):
+        return self._getSetting('speed_XY')
+    
+    def setSpeedZ(self, speed):
+        self._setSetting('speed_Z', speed)
+        
+    def getSpeedZ(self):
+        return self._getSetting('speed_Z')
+        
+    def setSpeedPipette(self, speed):
+        self._setSetting('speed_pipette', speed)
+        
+    def getSpeedPipette(self):
+        return self._getSetting('speed_pipette')
+    
     # TODO: Make speed a loadable parameter
     def getSpeed(self, axis):
+        axis = axis.upper()
         if axis == 'X' or axis == 'Y':
-            speed = 6000
+            speed = self.getSpeedXY()
         elif axis == 'Z':
-            speed = 3000
+            speed = self.getSpeedZ()
+        elif axis == 'A' or axis == 'PIPETTE' or axis == 'PLUNGER':
+            speed = self.getSpeedPipette()
         else:
             print("Wrong axis provided.")
             return
@@ -1105,6 +1184,7 @@ class robot(data):
         full_cmd = 'G0 X' + str(x) + ' Y' + str(y) + ' F' + str(speed)
         try:
             self.writeAndWaitCartesian(full_cmd)
+            self.writeAndWaitCartesian('M400')
         except:
             print ("Movement failed. The following command was sent:")
             print (full_cmd)
@@ -1171,6 +1251,9 @@ class robot(data):
         if speed is None:
             speed = self.getSpeed(axis)
         self.writeAndWaitCartesian('G0 '+axis+str(dist)+' F'+str(speed))
+        self.writeAndWaitCartesian('M400')
+        if axis == 'A':
+            self.powerStepperOff('A')
     
 
     def moveAxisDelta(self, axis, dist, speed=None):
@@ -1180,7 +1263,23 @@ class robot(data):
         pos = self.getPosition(axis=axis)
         new_pos = pos + dist
         self.writeAndWaitCartesian('G0 '+axis+str(new_pos)+' F'+str(speed))
+        self.writeAndWaitCartesian('M400')
+        if axis == 'A':
+            self.powerStepperOff('A')
     
+    
+    def powerSteppers(self):
+        self.writeAndWaitCartesian('M17')
+        self.writeAndWaitCartesian('M400')
+    
+    def powerStepperOff(self, axis):
+        """
+        Powers off the selected axis motor
+        Most useful for turning off the pipettor motor, as it tend to overheat.
+        """
+        axis = axis.upper()
+        self.writeAndWaitCartesian('M18 '+axis+'0')
+        self.writeAndWaitCartesian('M400')
 
     def getPosition(self, axis=None):
         """
@@ -1191,14 +1290,20 @@ class robot(data):
                 If specified as 'X', 'Y' or 'Z', will return the position only 
                 at this axis. Otherwise, will return a tuple of (X, Y, Z) positions.
         """
-        msg = self.writeAndWaitCartesian("M114")
-        msg_list = re.split(pattern=' ', string=msg)
-        x_str = msg_list[0]
-        y_str = msg_list[1]
-        z_str = msg_list[2]
-        x = float(re.split(pattern="\:", string=x_str)[1])
-        y = float(re.split(pattern="\:", string=y_str)[1])
-        z = float(re.split(pattern="\:", string=z_str)[1])
+        self.writeAndWaitCartesian('M400')
+        msg = self.writeAndWaitCartesian("?")
+        # msg will be in the form of:
+        # 'ok\n<Idle|MPos:0.0000,0.0000,1.0000,3.0000|WPos:0.0000,0.0000,1.0000|F:3000.0,100.0>\n'
+        # Now breaking on "|". Interested to get MPos:0.0000,0.0000,1.0000,3.0000
+        msg = re.split(pattern='\|', string=msg)[1]
+        # Now removing "MPos:". msg is 0.0000,0.0000,1.0000,3.0000
+        msg = re.split(pattern='\:', string=msg)[-1]
+        # Now splitting the remaining string into the single float values:
+        x = float(re.split(pattern=',', string=msg)[0])
+        y = float(re.split(pattern=',', string=msg)[1])
+        z = float(re.split(pattern=',', string=msg)[2])
+        a = float(re.split(pattern=',', string=msg)[3])
+        
         try:
             axis=axis.upper()
         except:
@@ -1209,8 +1314,10 @@ class robot(data):
             return y
         elif axis == 'Z':
             return z
+        elif axis == 'A':
+            return a
         else:
-            return x, y, z
+            return x, y, z, a
 
         
     def moveDownUntilPress(self, step, threshold, z_max=180, tare=True):
@@ -1477,6 +1584,14 @@ class robot(data):
 class rack(data):
     """
     Handles a rack info and functions
+    
+    Class Q&A:
+        Does it hold sample information anywhere?
+            No, there is no information about the samples anywhere. 
+            There is self.samples_dict, but it does not seem to be used anywhere. 
+            TODO: Consider removing.
+            All the properties for the samples are handled by the sample_type and sample classes.
+            
     """
     
     def __init__(self, name):
@@ -1523,6 +1638,16 @@ class rack(data):
                 Default: 0
         """
         return self._getSetting('calibration_Z') - added_length
+
+    def setXYCalibrationShift(self, y_shift_for_x, x_shift_for_y):
+        """
+        Specifies where to calibrate X and Y rack center (relative to the center).
+        """
+        self._setSetting('y_shift_for_x', y_shift_for_x)
+        self._setSetting('x_shift_for_y', x_shift_for_y)
+    
+    def getXYCalibrationShift(self):
+        return self._getSetting('y_shift_for_x'), self._getSetting('x_shift_for_y')
         
     def setZ(self, z):
         """
@@ -1579,6 +1704,7 @@ class rack(data):
                  dist_between_cols, dist_between_rows):
         """
         Specifies number of wells in the rack and their position relative to the center
+        This function assumes the wells are aligned as a rectangular grid (such as 96 wells plate)
         """
         self._setSetting('wells_x', wells_x)
         self._setSetting('wells_y', wells_y)
@@ -1587,19 +1713,48 @@ class rack(data):
         self._setSetting('well_diam', well_diam)
         self._setSetting('dist_between_cols', dist_between_cols)
         self._setSetting('dist_between_rows', dist_between_rows)
+        self._setSetting('wells_alignment', 'rectangular_grid') # Functions will calculate wells coordinates
+                                                               # for the rectangular grid
+
+    def setWellsCoordsCustom(self, coord_dict):
+        """
+        Use this function to manually provide the coordinates of the wells relative to the rack center.
+        Useful when the wells are not the square grid with the same distance between wells and columns.
+        Coordinates are provided in the form of the dictionary:
+        {0:(x0,y0, diameter0), 1:(x1,y1, diameter1), ...}
+        """
+        self._setSetting('wells_alignment', 'manual') # Functions will simply load the coordinates of 
+                                                      # each wells from the settings file
+        self._setSetting('wells_coordinates_dictionary', coord_dict)
+        
     
+    # Rework this function for rectangular grid only; maybe rename
     def getWellsParams(self):
-        x = self._getSetting('x_dist_center_to_well_00')
-        y = self._getSetting('y_dist_center_to_well_00')
-        columns = self._getSetting('wells_x')
-        rows = self._getSetting('wells_y')
-        well_diam = self._getSetting('well_diam')
-        dist_between_cols = self._getSetting('dist_between_cols')
-        dist_between_rows = self._getSetting('dist_between_rows')
-        return x, y, columns, rows, well_diam, dist_between_cols, dist_between_rows
+        alignment = self._getSetting('wells_alignment') # Detecting wells arrangement in the rack
+        if alignment == 'rectangular_grid':
+            x = self._getSetting('x_dist_center_to_well_00')
+            y = self._getSetting('y_dist_center_to_well_00')
+            columns = self._getSetting('wells_x')
+            rows = self._getSetting('wells_y')
+            well_diam = self._getSetting('well_diam')
+            dist_between_cols = self._getSetting('dist_between_cols')
+            dist_between_rows = self._getSetting('dist_between_rows')
+            return x, y, columns, rows, well_diam, dist_between_cols, dist_between_rows
+        elif alignment == 'manual':
+            coord_dict = self._getSetting('wells_coordinates_dictionary')
+            return coord_dict
     
-    def getWellDiameter(self):
-        return self._getSetting('well_diam')
+    def getWellDiameter(self, well_number=None):
+        alignment = self._getSetting('wells_alignment') # Detecting wells arrangement in the rack
+        if alignment == 'rectangular_grid':
+            diam = self._getSetting('well_diam')
+        elif alignment == 'manual':
+            if well_number is None:
+                well_number = 0
+            coord_dict = self.getWellsParams()
+            coord = coord_dict[well_number]
+            diam = coord[2]
+        return diam
     
     
     def getRackColRow(self):
@@ -1607,8 +1762,13 @@ class rack(data):
         Returns how many columns and rows the rack has.
         """
         return self._getSetting('wells_x'), self._getSetting('wells_y')
+
     
     def calcWellsXY(self):
+        """
+        Use this function only for the racks that has rectangular grid arrangement of the wells 
+        (for example, 96 wells plates)
+        """
         x_rack_center, y_rack_center = self.getCenterXY()
         x_well_0_rel, y_well_0_rel, columns, rows, well_diam, dist_between_cols, dist_between_rows = self.getWellsParams()
         
@@ -1634,8 +1794,31 @@ class rack(data):
     
     
     def calcWellXY(self, column, row):
-        coord_list = self.calcWellsXY()
-        return coord_list[column][row][0], coord_list[column][row][1]
+        """
+        Returns (x, y) coordinates of a well in the rack.
+        For rectangular grid arrangement (such as 96 wells plates), provide column and row 
+        coodinates of the well.
+        For the manual arrangement, provide column=0, row is the number of the well in 
+        the well coordinates dictionary.
+        """
+        alignment = self._getSetting('wells_alignment') # Detecting wells arrangement in the rack
+        if alignment == 'rectangular_grid':
+            # Function calcWellsXY returns final coordinates of the well
+            coord_list = self.calcWellsXY()
+            x = coord_list[column][row][0]
+            y = coord_list[column][row][1]
+        elif alignment == 'manual':
+            # Those are the coordinates relative to the rack center
+            coord_dict = self._getSetting('wells_coordinates_dictionary')
+            coord = coord_dict[str(row)]
+            x0 = coord[0]
+            y0 = coord[1]
+            # Absolute coordinates of the rack center:
+            x_rack_center, y_rack_center = self.getCenterXY()
+            # Calculating absolute coordinates of the well:
+            x = x_rack_center - x0
+            y = y_rack_center - y0
+        return x, y
     
     
     def getInitialCalibrationXY(self, added_z_length=0):
@@ -1644,6 +1827,7 @@ class rack(data):
             # This case happens if the rack is to be calibrated from outside (like samples rack), or 
             # using a large hole inside (like the tip rack or waste rack).
             x, y = self.getCenterXY() # X and Y coordinates of the center of the rack
+            y_shift_for_x, x_shift_for_y = self.getXYCalibrationShift()
             # X, Y, Z dimensions of the rack
             max_x, max_y, max_z = self.getRackSize()
             # Calculating edges of the rack
@@ -1667,10 +1851,10 @@ class rack(data):
         # Z coordinate at which calibration is started
         z = self.getCalibrationZ(added_length=added_z_length)
         # Formatting the calibration points coordinates. All in the form of (x, y, z)
-        p1 = (x_edge_1, y, z)
-        p2 = (x_edge_2, y, z)
-        p3 = (x, y_edge_1, z)
-        p4 = (x, y_edge_2, z)
+        p1 = (x_edge_1, y+y_shift_for_x, z)
+        p2 = (x_edge_2, y+y_shift_for_x, z)
+        p3 = (x+x_shift_for_y, y_edge_1, z)
+        p4 = (x+x_shift_for_y, y_edge_2, z)
         return p1, p2, p3, p4, style
         
     def calcCenterFromWellXY(self, x, y, column=None, row=None):
