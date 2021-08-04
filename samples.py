@@ -319,6 +319,12 @@ class sample(data):
             # to obtain this setting instead.
             v = self.stype.getCloseToBottomVol()
         return v
+
+    def getCloseToBottomZ(self, tip_length_compensation):
+        approx_vol = self.getCloseToBottomVol()
+        approx_z = self.calcAbsLiquidLevelFromVol(approx_vol, added_length=tip_length_compensation)
+        return approx_z
+
         
     def setBottomTouched(self):
         """
@@ -326,6 +332,7 @@ class sample(data):
         """
         self._setSetting('robot_touched_sample_bottom', 1)
         
+
 
 
 def createSample(type_name, sample_name, rack, pos_col, pos_row, volume, purge=True):

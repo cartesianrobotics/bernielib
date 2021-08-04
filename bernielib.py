@@ -3,6 +3,10 @@ import time
 import re
 import logging
 
+# libraries for curve fitting. Used for pipette calibration and for beads volumes.
+import pandas as pd
+from scipy.optimize import curve_fit
+
 # Local files
 from samples import sample_type
 from samples import sample
@@ -359,6 +363,12 @@ class robot(data):
         if poweroff:
             self.pipetteServoPowerDown()
     
+    def setPlungerMaxCoord(self, coordinate):
+        self._setSetting('maximum_plunger_movement_coordinate', coordinate)
+        
+    def getPlungerMaxCoord(self):
+        return self._getSetting('maximum_plunger_movement_coordinate')
+    
     
     def setTipDropServoUpAngle(self, angle):
         """
@@ -541,6 +551,62 @@ class robot(data):
         self.last_tip_coord = (col, row)
         return self.last_tip_coord
 
+
+    def _linearFunction(self, x, slope, intercept):
+        return slope * x + intercept
+    
+    def fitPipettePositionVsVolumeLine(self, calib_dict):
+        """
+        Fits the line to the provided dependence of plunger movement vs measured volume,
+        to get the coefficients for calculating plunger movement required to pipette given volume.
+        
+        Inputs:
+            calib_dict
+                Dictionary of calibration plunger vs volume data points. 
+                Format: {pos1:vol1, pos2:vol2, ...}
+        Returns:
+            slope, intercept
+                coefficient of the linear function: position = slope * volume + intercept
+        """
+        calib_series = pd.Series(calib_dict)
+        popt,pcov = curve_fit(self._linearFunction, calib_series, calib_series.index)
+        slope = popt[0]
+        intercept = popt[1]
+        return slope, intercept
+    
+    def fitVolumeVsPipettePositionLine(self, calib_dict):
+        """
+        Fits the line to the provided dependence of plunger movement vs measured volume,
+        to get the coefficients for calculating volume pipetted with given plunger movement.
+        
+        Inputs:
+            calib_dict
+                Dictionary of calibration plunger vs volume data points. 
+                Format: {pos1:vol1, pos2:vol2, ...}
+        Returns:
+            slope, intercept
+                coefficient of the linear function: volume = slope * position + intercept
+        """
+        calib_series = pd.Series(calib_dict)
+        popt,pcov = curve_fit(self._linearFunction, calib_series.index, calib_series)
+        slope = popt[0]
+        intercept = popt[1]
+        return slope, intercept
+    
+    
+    def calibratePipette(self, calib_data, how='dict'):
+        """
+        Updates pipette calibration given the calibration data
+        """
+        if how == 'dict':
+            slopeAvsV, interceptAvsV = self.fitPipettePositionVsVolumeLine(calib_data)
+            slopeVvsA, interceptVvsA = self.fitVolumeVsPipettePositionLine(calib_data)
+        else:
+            print("Provided calibration format is not supported yet.")
+            return
+        self.setPipetteVolumeConstants(slope=slopeAvsV, intercept=interceptAvsV)
+        self.setVolumeFromPlungerPositionConstants(slope=slopeVvsA, intercept=interceptVvsA)
+    
     
     def setPipetteVolumeConstants(self, slope, intercept):
         """
@@ -564,6 +630,15 @@ class robot(data):
         slope = self._getSetting('volume_to_position_slope')
         intercept = self._getSetting('volume_to_position_intercept')
         return slope, intercept
+        
+    def setVolumeFromPlungerPositionConstants(self, slope, intercept):
+        self._setSetting('position_to_volume_slope', slope)
+        self._setSetting('position_to_volume_intercept', intercept)
+        
+    def getVolFromPlungerPosConst(self):
+        slope = self._getSetting('position_to_volume_slope')
+        intercept = self._getSetting('position_to_volume_intercept')
+        return slope, intercept
     
     # TODO: Unit tests for this
     def calcPipettePositionFromVolume(self, volume):
@@ -573,9 +648,13 @@ class robot(data):
         """
         k, b = self.getPipetteVolumeConstants()
         position = volume * k + b
-        # Adding "-" because k, b were calculated for negative movement
-        # TODO: re-calculate k,b; remove "-"
-        return -position
+        return position
+        
+    
+    def calcVolFromPipettePosition(self, a):
+        k, b = self.getVolFromPlungerPosConst()
+        volume = a * k + b
+        return volume
     
 
     def movePipetteToVolume(self, volume):
@@ -624,7 +703,7 @@ class robot(data):
         # Finding volume from where to perform approach
         # Alternatively, user can provide their own V (overrides stored data)
         if V_probe is None:
-            V_probe = sample.stype.getCloseToBottomVol()
+            V_probe = sample.getCloseToBottomVol()
         # Using volume, finding absolute Z from where to perform approach
         # Alternatively, user can provide their own Z (overrides stored data)
         if Z_probe is None:
@@ -657,8 +736,53 @@ class robot(data):
             Z_bottom = self._probeTubeZBottom(sample, in_place=in_place)
         return Z_bottom
     
+    def setLiquidUptakeLowVolBottomOffset(self, offset):
+        """
+        Tube bottom offset when uptaking liquid from the tube where only low volume is present.
+        When uptaking, the tip will be away from the bottom of the tube on this value.
+        Usually in the range between 0.1 to 0.5 mm.
+        """
+        self._setSetting('liquid_uptake_low_volume_bottom_offset', offset)
+        
+    def getLiquidUptakeLowVolBottomOffset(self):
+        """
+        Tube bottom offset when uptaking liquid from the tube where only low volume is present.
+        When uptaking, the tip will be away from the bottom of the tube on this value.
+        Usually in the range between 0.1 to 0.5 mm.
+        """
+        return self._getSetting('liquid_uptake_low_volume_bottom_offset')
+
+    def _uptakeRemainingLiquidFromTheSide(self, axis, radius, delay, dZ, plunger_volume_position):
+        """
+        When trying to uptake all the liquid from the tube (and not caring about the exact volume), 
+        this function will move pipette to the side of the tube along a given axis for the radius distance.
+        It will lower Z axis on dZ mm, then move the plunger to a new plunger_volume_position.
+        It waits for the "delay" seconds, after that moves Z back up to the same dZ.
+        It waits again for the delay seconds, after which it moves pipette back along same axis.
+        
+        Inputs:
+            axis
+                X or Y. Axis at which to move the pipette
+            radius
+                distance from the center of the tube at which to perform the uptake
+            delay
+                how many seconds to wait after moving the plunger up and then after lifting Z from the bottom
+            dZ
+                Distance at which to move Z axis when uptaking the liquid.
+            plunger_volume_position
+                Position of a plunger in microliters.
+        """
+        self.moveAxisDelta(axis, radius)
+        self.moveAxisDelta('Z', dZ)
+        self.movePipetteToVolume(plunger_volume_position)
+        time.sleep(delay)
+        self.moveAxisDelta('Z', -dZ)
+        time.sleep(delay)
+        self.moveAxisDelta(axis, -radius)
+
     
-    def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, in_place=False):
+    def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, in_place=False,
+                     ignore_bottom_z_calibration=False):
         """
         Uptakes selected amount of liquid from the sample.
             Inputs:
@@ -679,6 +803,11 @@ class robot(data):
                 v_insert_override
                     If specified, the robot will insert the tip to this volume, ignoring everyting else.
                     Specifying 0 will get to the perseived bottom of the tube
+                ignore_bottom_z_calibration
+                    If True, robot will perform tube bottom calibration, even if it was already done before.
+                    New value will be stored in sample data.
+                    Useful when it is critical to uptake all the volume from the bottom, or if you suspect the 
+                    sample may loose its calibration.
         """
         
         pipetting_delay = self.getPipetteDelay(sample=sample)
@@ -699,19 +828,33 @@ class robot(data):
             self.movePipetteToVolume(lag_vol_down)
         elif sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
             # Moving to the critical volume
-            vol_to_immers_approx = sample.stype.getCloseToBottomVol()
+            vol_to_immers_approx = sample.getCloseToBottomVol()
             z_immers_approx = sample.calcAbsLiquidLevelFromVol(vol_to_immers_approx, 
                                                                added_length=self._calcExtraLength())
             
             # checking whether the sample bottom was touched before
-            if sample._settingPresent('tube_bottom_z'):
-                z_lowest = sample.getZBottom() - 0.5
+            if sample._settingPresent('tube_bottom_z') and (not ignore_bottom_z_calibration):
+                liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+                z_lowest = sample.getZBottom() - liquid_uptake_low_volume_bottom_offset
                 if z_immers_approx > z_lowest:
                     z_immers_approx = z_lowest
                 if not in_place:
                     self.moveToSample(sample, z=z_immers_approx)
                 self.movePipetteToVolume(0)
                 time.sleep(pipetting_delay)
+                # Slightly wiggling the pipette, so it angles a bit 
+                # and a space between the tip and the bottom appears
+                time.sleep(0.2)
+                self.moveAxisDelta('X', -2) # at d0, d0
+                self.moveAxisDelta('X', -2)
+                time.sleep(0.2)
+                self.moveAxisDelta('X', 2) # at d0, d0
+                self.moveAxisDelta('Y', 2) 
+                time.sleep(0.2)
+                self.moveAxisDelta('Y', -2) # at d0, d0
+                self.moveAxisDelta('Y', -2)
+                time.sleep(0.2)
+                self.moveAxisDelta('Y', 2) # at d0, d0
                 self.movePipetteToVolume(lag_vol_down)
             else:
                 # If robot never touched the sample bottom before, perform 
@@ -719,7 +862,7 @@ class robot(data):
                 if not in_place:
                     self.moveToSample(sample, z=z_immers_approx)
                 # Approaching the bottom of the tube
-                z_sample_bottom = self.moveDownUntilPress(step=0.2, threshold=200)
+                z_sample_bottom = self.moveDownUntilPress(step=0.1, threshold=100)
                 # Recording Z coordinate at which all liquid will be uptaken for the sample
                 # 0.5 means that liquid uptake will happen 0.5 mm above the bottom
                 # TODO: transfer this for the sample type or robot setting.
@@ -754,6 +897,61 @@ class robot(data):
             final_sample_vol = 0
         sample.setVolume(final_sample_vol)
 
+
+    def uptakeAllLiquid(self, sample, extra_vol=50, z_safe=50, ignore_calibration=True, R=2, T=0.5):
+        """
+        Tries to uptake all liquid from the bottom of the tube
+        """
+        x, y = sample.getCenterXY()
+        tip_length_compensation = self._calcExtraLength()
+        z_near_bottom = sample.getCloseToBottomZ(tip_length_compensation)
+        self.move(z=z_safe)
+        self.moveToSample(sample=sample)
+        
+        # Setting the plunger
+        volume = sample.getVolume()
+        volume_to_uptake = volume + extra_vol
+        if volume_to_uptake > 250:
+            # Robot will be unable to uptake all liquid at this point
+            return False
+        
+        self.movePipetteToVolume(volume_to_uptake)
+        
+        self.move(z=z_near_bottom)
+        
+        
+        tube_bottom_is_calibrated = sample._settingPresent('tube_bottom_z')
+        not_ignoring_calibration = not ignore_calibration
+        if tube_bottom_is_calibrated and not_ignoring_calibration:
+            z_lowest = sample.getZBottom()
+        else:
+            z_lowest = self.moveDownUntilPress(step=0.1, threshold=100)
+        
+        liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+        z_start_uptake = z_lowest - liquid_uptake_low_volume_bottom_offset
+        
+        # Moving robot to the pipetting position
+        self.move(z=z_start_uptake)
+        # Starting to uptake
+        self.movePipetteToVolume(extra_vol)
+        time.sleep(T) # Waiting for the most liquid to uptake
+        
+        # Moving slightly up
+        self.moveAxisDelta('Z', -liquid_uptake_low_volume_bottom_offset)
+        time.sleep(T)
+        # Doing a circle
+        vol_per_step = extra_vol/4.0
+        self._uptakeRemainingLiquidFromTheSide('X', R, T, 
+                            liquid_uptake_low_volume_bottom_offset, extra_vol-vol_per_step)
+        self._uptakeRemainingLiquidFromTheSide('X', -R, T, 
+                            liquid_uptake_low_volume_bottom_offset, extra_vol-2*vol_per_step)                    
+        self._uptakeRemainingLiquidFromTheSide('Y', R, T, 
+                            liquid_uptake_low_volume_bottom_offset, extra_vol-3*vol_per_step)
+        self._uptakeRemainingLiquidFromTheSide('Y', -R, T, liquid_uptake_low_volume_bottom_offset, 0)
+        
+        sample.setVolume(0)  # All liquid must have been uptaken
+        
+        return True
 
     
     def dispenseLiquid(self, sample, volume, extra_vol_insert=100, in_place=False, plunger_retract=True, 
@@ -802,7 +1000,7 @@ class robot(data):
         # Blowing extra volume
         if blow_extra: 
             # Moving down all the way
-            self.pipetteMove(40)
+            self.pipetteMove(self.getPlungerMaxCoord())
         
         if move_up_after:
             z_up = sample.calcAbsLiquidLevelFromVol(V_max, added_length=self._calcExtraLength())
@@ -970,7 +1168,7 @@ class robot(data):
         v_max = sample.stype.getMaxVolume()
         z_out = sample.calcAbsLiquidLevelFromVol(v_max, added_length=self._calcExtraLength())
         self.moveToSample(sample, z=z_out)
-        self.pipetteMove(40)
+        self.pipetteMove(self.getPlungerMaxCoord())
         time.sleep(mix_delay)
         # Moving pipette to the top
         self.pipetteMove(0)
@@ -1060,7 +1258,7 @@ class robot(data):
         # Moving to the top of the sample
         self.moveToSample(sample, z=z_max, z_hop=0)
         # Moving plunger all the way down to remove any residual liquid in the tip
-        self.pipetteMove(40)
+        self.pipetteMove(self.getPlungerMaxCoord())
         # Waiting for all the liquid to drop
         time.sleep(d)
         # Touching tube wall to remove any remaining droplets

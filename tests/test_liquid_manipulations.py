@@ -127,6 +127,28 @@ class bernielib_test_case(unittest.TestCase):
         self.assertEqual(ber.movePipetteToVolume.mock_calls[-2], mock.call(0))
         self.assertEqual(ber.movePipetteToVolume.mock_calls[-1], mock.call(0))
         
+
+
+    def test_uptakeLiquid__save_sample_bottom_coord(self):
+        
+        provided_z = 120    # Mocked Z coordinate of the bottom of the tube
+        
+        bl.time.sleep = mock.MagicMock()
+        bl.serial.Serial = mock.MagicMock()
+        ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        ber.moveToSample = mock.MagicMock()
+        ber.moveAxisDelta = mock.MagicMock()
+        ber.moveDownUntilPress = mock.MagicMock()
+        ber.moveDownUntilPress.return_value = provided_z
+        ber.movePipetteToVolume = mock.MagicMock()
+        
+        s1 = bl.createSample('eppendorf', 's1', ber.samples_rack, 1, 0, 100)
+            
+        ber.uptakeLiquid(s1, 100, lag_vol=5)
+        
+        saved_z_bottom = s1.getZBottom()
+        
+        self.assertEqual(saved_z_bottom, provided_z)
         
 
     def test__allowPlungerLagCompensation(self):
