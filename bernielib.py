@@ -781,10 +781,31 @@ class robot(data):
         self.moveAxisDelta(axis, -radius)
 
     
+    def _uptakeLiquidFromLowVolumeTube(self, init_uptake_vol_position, R, T, init_delay=0.5):
+        liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+        self.movePipetteToVolume(init_uptake_vol_position)
+        time.sleep(init_delay)
+        # Moving slightly up
+        self.moveAxisDelta('Z', -liquid_uptake_low_volume_bottom_offset)
+        time.sleep(init_delay)
+        vol_per_step = init_uptake_vol_position/4.0
+        self._uptakeRemainingLiquidFromTheSide('X', R, T, 
+                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-vol_per_step)
+        self._uptakeRemainingLiquidFromTheSide('X', -R, T, 
+                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-2*vol_per_step)                    
+        self._uptakeRemainingLiquidFromTheSide('Y', R, T, 
+                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-3*vol_per_step)
+        self._uptakeRemainingLiquidFromTheSide('Y', -R, T, liquid_uptake_low_volume_bottom_offset, 0)
+
+    
     def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, in_place=False,
-                     ignore_bottom_z_calibration=False):
+                     ignore_calibration=False):
         """
         Uptakes selected amount of liquid from the sample.
+        This function won't check whether the liquid amount exceeds the pipette capability.
+        User should not provide volume value that exceeds the maximum volume of the pipette.
+        Robot will just try to push plunger down according to the plunger vs V calibration, hitting the 
+        bottom and skipping steps. If this happens, homing is necessary.
             Inputs:
                 sample
                     object of a sample class; the sample from which to take the liquid.
@@ -803,7 +824,7 @@ class robot(data):
                 v_insert_override
                     If specified, the robot will insert the tip to this volume, ignoring everyting else.
                     Specifying 0 will get to the perseived bottom of the tube
-                ignore_bottom_z_calibration
+                ignore_calibration
                     If True, robot will perform tube bottom calibration, even if it was already done before.
                     New value will be stored in sample data.
                     Useful when it is critical to uptake all the volume from the bottom, or if you suspect the 
@@ -818,79 +839,121 @@ class robot(data):
         # Correcting for upward lag
         self.movePipetteToVolume(volume+lag_vol_down)
         
+        # Identifying depth to immerse into the sample
+        sample_has_low_volume = sample._isLowVolumeUptakeNeeded(volume+lag_vol_down)
+        
+        liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+        tube_bottom_is_calibrated = sample._settingPresent('tube_bottom_z')
+        not_ignoring_calibration = not ignore_calibration
+        
         if v_insert_override is not None:
-            # Inserting height is manually specified. Used for instance for pipetting up and down
             z_immers = sample.calcAbsLiquidLevelFromVol(v_insert_override, added_length=self._calcExtraLength())
-            if not in_place:
-                self.moveToSample(sample, z=z_immers)
-            self.movePipetteToVolume(0)
-            time.sleep(pipetting_delay)
-            self.movePipetteToVolume(lag_vol_down)
-        elif sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
-            # Moving to the critical volume
-            vol_to_immers_approx = sample.getCloseToBottomVol()
-            z_immers_approx = sample.calcAbsLiquidLevelFromVol(vol_to_immers_approx, 
-                                                               added_length=self._calcExtraLength())
-            
-            # checking whether the sample bottom was touched before
-            if sample._settingPresent('tube_bottom_z') and (not ignore_bottom_z_calibration):
-                liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
-                z_lowest = sample.getZBottom() - liquid_uptake_low_volume_bottom_offset
-                if z_immers_approx > z_lowest:
-                    z_immers_approx = z_lowest
-                if not in_place:
-                    self.moveToSample(sample, z=z_immers_approx)
-                self.movePipetteToVolume(0)
-                time.sleep(pipetting_delay)
-                # Slightly wiggling the pipette, so it angles a bit 
-                # and a space between the tip and the bottom appears
-                time.sleep(0.2)
-                self.moveAxisDelta('X', -2) # at d0, d0
-                self.moveAxisDelta('X', -2)
-                time.sleep(0.2)
-                self.moveAxisDelta('X', 2) # at d0, d0
-                self.moveAxisDelta('Y', 2) 
-                time.sleep(0.2)
-                self.moveAxisDelta('Y', -2) # at d0, d0
-                self.moveAxisDelta('Y', -2)
-                time.sleep(0.2)
-                self.moveAxisDelta('Y', 2) # at d0, d0
-                self.movePipetteToVolume(lag_vol_down)
+        else:
+            if sample_has_low_volume:
+                # Finding approximate tube bottom coordinate.
+                # It will be refined in the future
+                tip_length_compensation = self._calcExtraLength()
+                z_immers = sample.getCloseToBottomZ(tip_length_compensation)
+                if tube_bottom_is_calibrated and not_ignoring_calibration:
+                    # Overwriting the approximate bottom Z coordinate with the precise calibrated ones
+                    z_immers = sample.getZBottom() - liquid_uptake_low_volume_bottom_offset
             else:
-                # If robot never touched the sample bottom before, perform 
-                # gradual approach to discover safe bottom coordinate
-                if not in_place:
-                    self.moveToSample(sample, z=z_immers_approx)
-                # Approaching the bottom of the tube
-                z_sample_bottom = self.moveDownUntilPress(step=0.1, threshold=100)
-                # Recording Z coordinate at which all liquid will be uptaken for the sample
-                # 0.5 means that liquid uptake will happen 0.5 mm above the bottom
-                # TODO: transfer this for the sample type or robot setting.
-                sample.setZBottom(z_sample_bottom)
-                # Recording for the sample that the bottom was touched
-                sample.setBottomTouched()
-                step, steps_number, delay = sample.stype.getLowVolUptakeParameters()
-                remaining_vol = volume
-                vol_per_step = volume / steps_number
-                for i in range(steps_number):
-                    remaining_vol = remaining_vol - vol_per_step
-                    self.movePipetteToVolume(remaining_vol)
-                    time.sleep(delay)
-                    self.moveAxisDelta('Z', -step)
-                self.movePipetteToVolume(0)
-                time.sleep(delay)
-                self.movePipetteToVolume(lag_vol_down)
+                # Normal uptake procedure
+                z_immers = sample.calcNormalPipettingZ(
+                            v_uptake=volume, v_lag=lag_vol_down, added_length=self._calcExtraLength())
+        
+        # Moving Z axis so the tip is touching the bottom of the tube
+        if not in_place:
+            self.moveToSample(sample, z=z_immers)
+        
+        # Checking whether the tube bottom needs to be calibrated.
+        # Will be calibrated either if it was never done before, or if there are explicit instructions to ignore_calibration
+        # the previous calibration
+        if v_insert_override is None:
+            if sample_has_low_volume:
+                if (not tube_bottom_is_calibrated) or ignore_calibration:
+                    # Approaching the bottom of the tube
+                    z_sample_bottom = self.moveDownUntilPress(step=0.1, threshold=100)
+                    # Recording Z coordinate at which all liquid will be uptaken for the sample
+                    sample.setZBottom(z_sample_bottom)
+                    # Recording for the sample that the bottom was touched
+                    sample.setBottomTouched()
+                    # Moving a notch up so the tip hole is not blocked
+                    self.moveAxisDelta('Z', -liquid_uptake_low_volume_bottom_offset)
+        
+        # Deciding whether to follow a low volume uptake or a normal uptake
+        if sample_has_low_volume:
+            # Low volume uptake procedure
+            # Uptaking liquid
+            self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=volume*0.8, R=2, T=0.5, init_delay=0.5)
+            # Waiting after last step (maybe some liquid left)
+            time.sleep(0.5)
+            # Eliminating the lag
+            self.movePipetteToVolume(lag_vol_down)
         else:
             # Normal uptake procedure
-            z_immers = sample.calcNormalPipettingZ(
-                            v_uptake=volume, v_lag=lag_vol_down, added_length=self._calcExtraLength())
-            if not in_place:
-                self.moveToSample(sample, z=z_immers)
             self.movePipetteToVolume(0)
             time.sleep(pipetting_delay)
             self.movePipetteToVolume(lag_vol_down)
+            
+            
+            
+            
         
-        # Correcting the volume
+#        if v_insert_override is not None:
+#            # Inserting height is manually specified. Used for instance for pipetting up and down
+#            z_immers = sample.calcAbsLiquidLevelFromVol(v_insert_override, added_length=self._calcExtraLength())
+#            if not in_place:
+#                self.moveToSample(sample, z=z_immers)
+#            self.movePipetteToVolume(0)
+#            time.sleep(pipetting_delay)
+#            self.movePipetteToVolume(lag_vol_down)
+#        elif sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
+#            # Moving to the critical volume
+#            tip_length_compensation = self._calcExtraLength()
+#            z_immers_approx = sample.getCloseToBottomZ(tip_length_compensation)
+#            # checking whether the sample bottom was touched before
+#            tube_bottom_is_calibrated = sample._settingPresent('tube_bottom_z')
+#            not_ignoring_calibration = not ignore_calibration
+#            if tube_bottom_is_calibrated and not_ignoring_calibration:
+#                liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+#                z_lowest = sample.getZBottom() - liquid_uptake_low_volume_bottom_offset
+#                if z_immers_approx > z_lowest:
+#                    z_immers_approx = z_lowest
+#                if not in_place:
+#                    self.moveToSample(sample, z=z_immers_approx)
+#                
+#            else:
+#                # If robot never touched the sample bottom before, perform 
+#                # gradual approach to discover safe bottom coordinate
+#                if not in_place:
+#                    self.moveToSample(sample, z=z_immers_approx)
+#                # Approaching the bottom of the tube
+#                z_sample_bottom = self.moveDownUntilPress(step=0.1, threshold=100)
+#                # Recording Z coordinate at which all liquid will be uptaken for the sample
+#                # 0.5 means that liquid uptake will happen 0.5 mm above the bottom
+#                # TODO: transfer this for the sample type or robot setting.
+#                sample.setZBottom(z_sample_bottom)
+#                # Recording for the sample that the bottom was touched
+#                sample.setBottomTouched()
+#                
+#            # Uptaking liquid
+#            self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=volume*0.8, R=2, T=0.5, init_delay=0.5)
+#            # Waiting after last step (maybe some liquid left)
+#            time.sleep(0.5)
+#            # Eliminating the lag
+#            self.movePipetteToVolume(lag_vol_down)
+#        else:
+#            # Normal uptake procedure
+#            z_immers = sample.calcNormalPipettingZ(
+#                            v_uptake=volume, v_lag=lag_vol_down, added_length=self._calcExtraLength())
+#            if not in_place:
+#                self.moveToSample(sample, z=z_immers)
+#            self.movePipetteToVolume(0)
+#            time.sleep(pipetting_delay)
+#            self.movePipetteToVolume(lag_vol_down)
+        
+        # Changing the volume record in the sample data, to record the liquid removal
         init_sample_vol = sample.getVolume()
         final_sample_vol = init_sample_vol - volume
         if final_sample_vol < 0:
@@ -932,22 +995,9 @@ class robot(data):
         
         # Moving robot to the pipetting position
         self.move(z=z_start_uptake)
-        # Starting to uptake
-        self.movePipetteToVolume(extra_vol)
-        time.sleep(T) # Waiting for the most liquid to uptake
         
-        # Moving slightly up
-        self.moveAxisDelta('Z', -liquid_uptake_low_volume_bottom_offset)
-        time.sleep(T)
-        # Doing a circle
-        vol_per_step = extra_vol/4.0
-        self._uptakeRemainingLiquidFromTheSide('X', R, T, 
-                            liquid_uptake_low_volume_bottom_offset, extra_vol-vol_per_step)
-        self._uptakeRemainingLiquidFromTheSide('X', -R, T, 
-                            liquid_uptake_low_volume_bottom_offset, extra_vol-2*vol_per_step)                    
-        self._uptakeRemainingLiquidFromTheSide('Y', R, T, 
-                            liquid_uptake_low_volume_bottom_offset, extra_vol-3*vol_per_step)
-        self._uptakeRemainingLiquidFromTheSide('Y', -R, T, liquid_uptake_low_volume_bottom_offset, 0)
+        # Uptaking liquid
+        self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=extra_vol, R=R, T=T, init_delay=T)
         
         sample.setVolume(0)  # All liquid must have been uptaken
         

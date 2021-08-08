@@ -151,6 +151,46 @@ class bernielib_test_case(unittest.TestCase):
         self.assertEqual(saved_z_bottom, provided_z)
         
 
+    def test_uptakeLiquid__touch_bottom_decision(self):
+        provided_z = 120    # Mocked Z coordinate of the bottom of the tube
+        bl.time.sleep = mock.MagicMock()
+        bl.serial.Serial = mock.MagicMock()
+        ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        ber.moveToSample = mock.MagicMock()
+        ber.moveAxisDelta = mock.MagicMock()
+        ber.moveDownUntilPress = mock.MagicMock()
+        ber.moveDownUntilPress.return_value = provided_z
+        ber.movePipetteToVolume = mock.MagicMock()
+        
+        # Sample which has lots of liquid should not be probed for the bottom
+        s1 = bl.createSample('eppendorf', 's1', ber.samples_rack, 1, 0, 1000)
+        sample_has_low_volume = s1._isLowVolumeUptakeNeeded(205)
+        ber.uptakeLiquid(s1, 200, lag_vol=5)
+        self.assertFalse(sample_has_low_volume)
+        self.assertFalse(ber.moveDownUntilPress.called)
+        # Regardless of the liquid amount
+        s1 = bl.createSample('eppendorf', 's1', ber.samples_rack, 1, 0, 1000)
+        sample_has_low_volume = s1._isLowVolumeUptakeNeeded(205)
+        ber.uptakeLiquid(s1, 20, lag_vol=5)
+        self.assertFalse(sample_has_low_volume)
+        self.assertFalse(ber.moveDownUntilPress.called)
+
+        # Sample which has little amount of liquid should be probed for the bottom
+        ber.moveDownUntilPress = mock.MagicMock()
+        ber.moveDownUntilPress.return_value = provided_z
+        s1 = bl.createSample('eppendorf', 's1', ber.samples_rack, 1, 0, 10)
+        ber.uptakeLiquid(s1, 10, lag_vol=5)
+        self.assertTrue(ber.moveDownUntilPress.called)
+        
+        # When v_insert_override is specified, the pipetting must happen in place, without 
+        # further analysis
+        ber.moveDownUntilPress = mock.MagicMock()
+        ber.moveDownUntilPress.return_value = provided_z
+        s1 = bl.createSample('eppendorf', 's1', ber.samples_rack, 1, 0, 10)
+        ber.uptakeLiquid(s1, 10, lag_vol=5, v_insert_override=20)
+        self.assertFalse(ber.moveDownUntilPress.called)
+
+
     def test__allowPlungerLagCompensation(self):
         bl.time.sleep = mock.MagicMock()
         bl.serial.Serial = mock.MagicMock()
