@@ -1,3 +1,6 @@
+import pandas as pd
+import os
+
 # Local files
 from general import data
 
@@ -145,7 +148,22 @@ class sample_type(data):
         delay = self._getSetting('low_vol_uptake_delay_between_steps')
         return step, steps_number, delay
         
-
+    def setMixScriptFilePath(self, filepath):
+        self._setSetting('mix_script_file_path', filepath)
+        
+    def getMixScriptFilePath(self):
+        return self._getSetting('mix_script_file_path')
+    
+    def getMixScript(self, filepath=None):
+        if filepath is None:
+            filepath = self.getMixScriptFilePath()
+        
+        if os.path.exists(filepath):
+            mix_script_df = pd.read_csv(filepath)
+            return mix_script_df
+        else:
+            print("Function getMixScript; sample type "+str(self.name)+":")
+            print("Provided path "+str(filepath)+" does not exist.")
     
     
 class sample(data):
