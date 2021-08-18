@@ -20,10 +20,13 @@ Waste tube rack,,reagents,,,,,,,,,,,,
 Waste tube position,,1,,,,,,,,,,,,
 Waste volume,,0,,,,,,,,,,,,
 Sample tube type,“eppendorf” for 1.5 mL eppendorf tube,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf
-Initial sample volume,"Samples with values <= 0 will not be purified, the rest of the parameters for those samples will be ignored",30,30,30,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+Initial sample volume,"Samples with values <= 0 will not be purified, the rest of the parameters for those samples will be ignored",100,100,100,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
 DNA size cutoff,Will retain all DNA shorter than this value. Used if “fraction” or “bead volume” is not provided,250,150,300,0,0,0,0,0,0,0,0,0,0
 Fraction,"How much volume of the beads suspension to add, relative to the sample volume. Example: sample volume = 30 uL, fraction = 0.5, then 15 uL of beads suspension will be added. Overrides “DNA size cutoff” value, but is ignored if “beads volume” is provided.",1.5,1,0.7,0,0,0,0,0,0,0,0,0,0
-Beads volume,"How much volume of the beads suspension to add. If provided, overrides DNA size cutoff and Fraction.",40,30,17,0,0,0,0,0,0,0,0,0,0
+Beads volume,"How much volume of the beads suspension to add. If provided, overrides DNA size cutoff and Fraction.",0,0,0,0,0,0,0,0,0,0,0,0,0
+DNA size upper cutoff,Will retain all DNA longer than this value. Used if “fraction” or “bead volume” is not provided,850,750,600,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+Fraction upper cutoff,"How much volume of the beads suspension to add for the long DNA cutoff, relative to the sample volume. Example: sample volume = 30 uL, fraction = 0.5, then 15 uL of beads suspension will be added. Overrides “DNA size cutoff” value, but is ignored if “beads volume” is provided.",0.4,0.6,0.5,0,0,0,0,0,0,0,0,0,0
+Beads volume upper cutoff,"How much volume of the beads suspension to add for the long DNA cutoff. If provided, overrides DNA size cutoff and Fraction.",0,0,0,0,0,0,0,0,0,0,0,0,0
 DNA absorption time,"How long to wait after adding the beads to the sample, in minutes. Count starts after initial mixing is done.",5,,,,,,,,,,,,
 Times to mix while absorbing,"While waiting for absorption, the robot will attempt to mix the samples this many times.",1,,,,,,,,,,,,
 Beads pulling time after absorption,"After beads are moved towards the sample, how long to wait for the beads to pull towards the side of the tube, in minutes. ",1.5,,,,,,,,,,,,

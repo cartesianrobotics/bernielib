@@ -371,17 +371,57 @@ def createSample(type_name, sample_name, rack, pos_col, pos_row, volume, purge=T
     return s
     
 
-def createSamplesToPurifyList(robot, volume_list):
+def createSamplesToPurifyList(robot, volume_list=None, position_list=None, 
+                              number_of_tubes=None, start_from_position=0):
+    """
+    Initializes a list of samples. 
+    Can be used both for the samples to purify and for the intermediary samples.
+    
+    Inputs:
+        robot
+            Bernie robot instance
+        volume_list
+            List of volumes of liquid that is already in the sample. If not provided, assumed empty tube.
+        position_list
+            Custom list of positions that every tube has. If not provided, assume that the tubes
+            are at position 0, 1, 2, ...
+        number_of_tubes
+            when volume_list is not provided, the function will initialize that many tubes with 0 volume.
+        start_from_position
+            Unless position_list is provided, the function will start initializing the tubes from that position.
+            For example, when start_from_position=6, the first sample will be initialized at the well (1, 6).
+    """
+
     type_name = 'eppendorf'
     rack = robot.samples_rack
     
-    sample_counter = 0
     sample_list = []
-    for volume in volume_list:
-        sample_name = 'sample'+str(sample_counter)
-        s = createSample(type_name, sample_name, rack, pos_col=1, pos_row=sample_counter, volume=volume)
+    
+    # Checking if volume list is provided. If not, creating zero volumes list
+    if volume_list is None:
+        # Checking if number of tubes provided
+        if number_of_tubes is None:
+            print("Error: Provide either number of tubes, or list of volumes in the tubes.")
+            return
+        volume_list = []
+        for i in range(number_of_tubes):
+            volume_list.append(0)
+    
+    # If custom position list is not provided, I am generating a new position list starting from 0 well.
+    if position_list is None:
+        sample_counter = start_from_position
+        position_list = []
+        for volume in volume_list:
+            position_list.append(sample_counter)
+            sample_counter += 1
+    
+    
+    
+    # Now initializing the sample instances.
+    for volume, position in zip(volume_list, position_list):
+        sample_name = 'sample'+str(position)
+        s = createSample(type_name, sample_name, rack, pos_col=1, pos_row=position, volume=volume)
         sample_list.append(s)
-        sample_counter += 1
         
     return sample_list
     

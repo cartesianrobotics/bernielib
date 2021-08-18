@@ -46,7 +46,7 @@ class robot(data):
     Handles all robot operations
     """
     
-    def __init__ (self, cartesian_port_name=None, loadcell_port_name=None):
+    def __init__ (self, cartesian_port_name=None, loadcell_port_name=None, tips_type='old'):
         
         
         super().__init__(name='robot')
@@ -56,7 +56,13 @@ class robot(data):
         # Initializing racks for the robot
         self.samples_rack = rack('samples')
         self.waste_rack = rack('waste')
-        self.tips_rack = consumable('tips')
+        # Two tips racks are possible: old and new. They will have different parameters.
+        if tips_type == 'old':
+            self.tips_rack = consumable('tips')
+        elif tips_type == 'new':
+            self.tips_rack = consumable('new_tips')
+        else:
+            self.tips_rack = consumable('tips')
         self.reagents_rack = rack('reagents')
         
         if (cartesian_port_name is None) or (loadcell_port_name is None):
@@ -307,8 +313,8 @@ class robot(data):
         """
         self.home(part='pipette')
     
-    def pipetteMove(self, dist):
-        self.moveAxis('A', dist)
+    def pipetteMove(self, dist, speed=None):
+        self.moveAxis('A', dist, speed=speed)
     
     def pipetteServoPowerUp(self):
         """
@@ -483,6 +489,8 @@ class robot(data):
     
     
     def pickUpTip(self, column, row, fine_approach_dz=12.5, raise_z=0, raise_dz_with_tip=60, dx=0, dy=0):
+        # Getting a relative height to which it is safe to approach the tips (without hitting them)
+        fine_approach_dz = self.tips_rack.getFineApproachdZ()
         # Moving towards the tip
         self.moveToWell(rack_name='tips', column=column, row=row, save_height=fine_approach_dz)
         # Optional correction (mostly for debugging)
@@ -511,7 +519,10 @@ class robot(data):
         Dumps the tip at current XYZ position.
         """
         self.pipetteServoDown()
-        self.pipetteMove(self._getDumpTipPlungerMovement())
+        # Initial move (fast)
+        self.pipetteMove(self._getDumpTipPlungerMovement()-15, speed=self._getSetting("speed_pipette"))
+        # Move slowly to hit the tip (stepper may skip steps if moved fast)
+        self.pipetteMove(self._getDumpTipPlungerMovement(), speed=1000)
         self.tip_attached = 0
         self.pipetteMove(1)
         self.pipetteServoUp()
@@ -1167,7 +1178,7 @@ class robot(data):
         self.pipetteMove(0)
         
 
-    def mixByScript(self, sample, script, vol_uptake_fraction=0.8):
+    def mixByScript(self, sample, script=None, vol_uptake_fraction=0.8):
         """
         Mixes liquid in the sample according to provided script.
         
@@ -1176,12 +1187,15 @@ class robot(data):
                 Sample object
             script
                 Pandas DataFrame object containing table of movements that needs to be done
-                to perform mixing.
+                to perform mixing. By default, function will load it from the sample properties.
             vol_uptake_fraction=0.8
                 Indicates the persentage of liquid inside the tube to perform mixing with.
         """
         
         # Obtaining sample properties
+        # mix script
+        if script is None:
+            script = sample.stype.getMixScript()
         # Liquid volume currently inside the tube
         v_in = sample.getVolume()
         # Maximum volume that the tube may have
@@ -2240,6 +2254,7 @@ class rack(data):
         
 
 
+
 class consumable(rack):
     """
     Handles rack of consumables (such as a rack of tips).
@@ -2297,3 +2312,21 @@ class consumable(rack):
         if consume:
             self.consume(col, row)
         return col, row
+
+
+
+    def setFineApproachdZ(self, fine_approach_dz):
+        """
+        Sets a coordinate relative to the calibrated consumable rack z, at which it is 
+        safe to approach without hitting any consumable (tips), even when the rack is 
+        not calibrated correctly.
+        """
+        self._setSetting('fine_approach_dz', fine_approach_dz)
+        
+    def getFineApproachdZ(self):
+        """
+        Returns a coordinate relative to the calibrated consumable rack z, at which it is 
+        safe to approach without hitting any consumable (tips), even when the rack is 
+        not calibrated correctly.
+        """
+        return self._getSetting('fine_approach_dz')

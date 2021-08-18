@@ -211,4 +211,4 @@ class bernielib_test_case(unittest.TestCase):
     
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(verbosity=2)

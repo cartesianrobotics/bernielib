@@ -84,6 +84,51 @@ class bernielib_test_case(unittest.TestCase):
         self.assertEqual(df['Height'][1], 1)
         self.assertEqual(df['H_relative_to'][0], 'top')
         self.assertEqual(df['H_relative_to'][1], 'bottom')
+
+    def test_createSamplesToPurifyList_generating_from_volume_list(self):
+        
+        samples_list = bl.createSamplesToPurifyList(self.ber, [30, 40, 50])
+        
+        self.assertEqual(samples_list[0].getVolume(), 30)
+        self.assertEqual(samples_list[1].getVolume(), 40)
+        self.assertEqual(samples_list[2].getVolume(), 50)
+        
+        self.assertEqual(samples_list[0].getWell(), (1, 0))
+        self.assertEqual(samples_list[1].getWell(), (1, 1))
+        self.assertEqual(samples_list[2].getWell(), (1, 2))
+        
+    def test_createSamplesToPurifyList_generating_from_positions_list(self):
+        samples_list = bl.createSamplesToPurifyList(self.ber, [30, 40, 50], [6, 7, 8])
+        
+        self.assertEqual(samples_list[0].getVolume(), 30)
+        self.assertEqual(samples_list[1].getVolume(), 40)
+        self.assertEqual(samples_list[2].getVolume(), 50)
+        
+        self.assertEqual(samples_list[0].getWell(), (1, 6))
+        self.assertEqual(samples_list[1].getWell(), (1, 7))
+        self.assertEqual(samples_list[2].getWell(), (1, 8))
+        
+    def test_createSamplesToPurifyList_generating_from_number_of_tubes(self):
+        samples_list = bl.createSamplesToPurifyList(self.ber, number_of_tubes=3)
+        
+        self.assertEqual(samples_list[0].getVolume(), 0)
+        self.assertEqual(samples_list[1].getVolume(), 0)
+        self.assertEqual(samples_list[2].getVolume(), 0)
+        
+        self.assertEqual(samples_list[0].getWell(), (1, 0))
+        self.assertEqual(samples_list[1].getWell(), (1, 1))
+        self.assertEqual(samples_list[2].getWell(), (1, 2))
+    
+    def test_createSamplesToPurifyList__start_from_position(self):
+        samples_list = bl.createSamplesToPurifyList(self.ber, [30, 40, 50], start_from_position=6)
+        
+        self.assertEqual(samples_list[0].getVolume(), 30)
+        self.assertEqual(samples_list[1].getVolume(), 40)
+        self.assertEqual(samples_list[2].getVolume(), 50)
+        
+        self.assertEqual(samples_list[0].getWell(), (1, 6))
+        self.assertEqual(samples_list[1].getWell(), (1, 7))
+        self.assertEqual(samples_list[2].getWell(), (1, 8))
     
     def tearDown(self):
         try:
@@ -100,6 +145,16 @@ class bernielib_test_case(unittest.TestCase):
             os.remove(self.mix_script_filename)
         except:
             pass
+            
+        try:
+            self.ber.close()
+        except:
+            pass
+
+        try:
+            del self.ber
+        except:
+            pass
         
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(verbosity=2)
