@@ -3,6 +3,10 @@ import time
 import re
 import logging
 
+# libraries for curve fitting. Used for pipette calibration and for beads volumes.
+import pandas as pd
+from scipy.optimize import curve_fit
+
 # Local files
 from samples import sample_type
 from samples import sample
@@ -13,7 +17,10 @@ from general import listSerialPorts
 from general import data
 
 
-#TODO: Tip end correction
+# TODO: Figure out how to make smoothieware send a signal for physically finishing the job
+# TODO: Create settings for which COM port associates with which part of electronics
+# (which one is for smoothieboard, which one is for the load cells)
+# TODO: Tip end correction
 
 
 """
@@ -30,13 +37,16 @@ BAUDRATE = 115200
 TIMEOUT = 0.1   # seconds
 END_OF_LINE = "\r"
 
+# Welcome messages
+LOADCELL_WELCOME = "Bernie's load cells controller"
+SMOOTHIE_STATUS_REPLY = "Build version: "
 
 class robot(data):
     """
     Handles all robot operations
     """
     
-    def __init__ (self, cartesian_port_name, pipette_port_name, misc_port_name):
+    def __init__ (self, cartesian_port_name=None, loadcell_port_name=None, tips_type='old'):
         
         
         super().__init__(name='robot')
@@ -46,20 +56,45 @@ class robot(data):
         # Initializing racks for the robot
         self.samples_rack = rack('samples')
         self.waste_rack = rack('waste')
-        self.tips_rack = consumable('tips')
+        # Two tips racks are possible: old and new. They will have different parameters.
+        if tips_type == 'old':
+            self.tips_rack = consumable('tips')
+        elif tips_type == 'new':
+            self.tips_rack = consumable('new_tips')
+        else:
+            self.tips_rack = consumable('tips')
         self.reagents_rack = rack('reagents')
         
-        # Opening communications
-        self.cartesian_port = serial.Serial(cartesian_port_name, BAUDRATE, timeout=TIMEOUT)
-        self.pipette_port = serial.Serial(pipette_port_name, BAUDRATE, timeout=TIMEOUT)
-        self.misc_port = serial.Serial(misc_port_name, BAUDRATE, timeout=TIMEOUT)
+        if (cartesian_port_name is None) or (loadcell_port_name is None):
+            # If at least one of the port names are not provided, 
+            # the library tries to assign it automatically.
+            ports_names_list = listSerialPorts()
+            for port_name in ports_names_list:
+                unknown_port = serial.Serial(port_name, BAUDRATE, timeout=TIMEOUT)
+                unknown_port.flushInput() # Cleaning anything that may be in the buffer.
+                port_controller = self._assignPort(unknown_port, SMOOTHIE_STATUS_REPLY, LOADCELL_WELCOME)
+                if port_controller == 'loadcell':
+                    self.loadcell_port = unknown_port
+                elif port_controller == 'cartesian':
+                    self.cartesian_port = unknown_port
+                else:
+                    print ("Port is undefined")
+        else:
+            # If both port names are provided, just opening the port.
+            # It is a user discretion to provide them correctly.
+            # Opening communications
+            self.cartesian_port = serial.Serial(cartesian_port_name, BAUDRATE, timeout=TIMEOUT)
+            # Opening port for arduino board that manages load cells.
+            # At the moment, I do not have smoothieware able to communicate with the load cells. 
+            # FIRMWARE TODO: write module for smoothieware that communicates with load cells.
+            # ELECTRONICS TODO: Remove load cell arduino and USB hub; shrink the electronics box
+            self.loadcell_port = serial.Serial(loadcell_port_name, BAUDRATE, timeout=TIMEOUT)
         
         # Waiting for ports to open
         time.sleep(1)
         
         self.cartesian_port.flushInput()
-        self.pipette_port.flushInput()
-        self.misc_port.flushInput()
+        self.loadcell_port.flushInput()
         
         # Starting with tip not attached
         self.tip_attached = 0 # 0 - not attached, 1 - attached
@@ -75,19 +110,15 @@ class robot(data):
         except:
             pass
         try:
-            self.pipette_port.close()
-        except:
-            pass
-        try:
-            self.misc_port.close()
+            self.loadcell_port.close()
         except:
             pass
     
     
     
     
-    def _readAll(self, port):
-        time.sleep(0.05)
+    def _readAll(self, port, delay=0.001):
+        time.sleep(delay)
         message = ''
         while port.inWaiting():
             message += port.read(1).decode("utf-8")
@@ -113,8 +144,8 @@ class robot(data):
         port.write(expr_enc)
     
         
-    def writeMisc(self, expression):
-        self._write(port=self.misc_port, expression=expression, eol='')
+    def writeLoadCell(self, expression):
+        self._write(port=self.loadcell_port, expression=expression, eol='')
     
         
     def _writeAndWait(self, port, expression, eol, confirm_message):
@@ -123,8 +154,8 @@ class robot(data):
         return message
         
     
-    def writeAndWaitMisc(self, expression):
-        return self._writeAndWait(port=self.misc_port, expression=expression, eol='', confirm_message='\r\n')
+    def writeAndWaitLoadCell(self, expression):
+        return self._writeAndWait(port=self.loadcell_port, expression=expression, eol='', confirm_message='\r\n')
 
 
     def _getRackObjectByName(self, rack_name):
@@ -146,84 +177,236 @@ class robot(data):
             return
         return r
 
+    def _setPortNames(self, cartesian_port_name, loadcell_port_name):
+        """
+        Saves the port names (such as COM2, COM3 etc) to the robot's settings file.
+        """
+        self._setSetting('cartesian_port_name', cartesian_port_name)
+        self._setSetting('loadcell_port_name', loadcell_port_name)
+    
+    def _getPortNames(self):
+        """
+        Returns port names for the robot boards.
+        First value is for the cartesian robot controller (smoothieboard), 
+        second value is for the load cell (arduino).
+        """
+        cartesian_port_name = self._getSetting('cartesian_port_name')
+        loadcell_port_name = self._getSetting('loadcell_port_name')
+        return cartesian_port_name, loadcell_port_name
+
+    def _assignPort(self, port, cartesian_expected_msg, loadcell_expected_msg, 
+                    init_delay=0.05, attempts=50, baudrate=BAUDRATE, timeout=TIMEOUT):
+        
+        for attempt in range(attempts):
+            message = self._writeAndWait(port=port, expression='version', eol='\n', confirm_message='\n')
+            if re.search(pattern=cartesian_expected_msg, string=message):
+                return 'cartesian'
+            elif re.search(pattern=loadcell_expected_msg, string=message):
+                return 'loadcell'
+        return 'Unidentified'
+
+    def _verifyPort(self, port_instance, expected_controller_name, expected_message, 
+                    init_delay=0.05, attempts=50, baudrate=BAUDRATE, timeout=TIMEOUT):
+        """
+        Sends a request to the controller and waits for it to return a reply.
+        Then, verifies the reply against the desired messages.
+        """
+        for attempt in range(attempts):
+            # Sending "version" request
+            message = self._writeAndWait(port=port_instance, expression='version', eol='\n', confirm_message='\n')
+            if re.search(pattern=expected_message, string=message):
+                # Found a match, stopping cycle and returning True
+                return True
+        # If a program reached here, that means no matches were found during all the attempts.
+        return False
+
+        
+    def _verifyLoadCellPort(self, loadcell_port_name, init_delay=0.05, attempts=100, baudrate=BAUDRATE, timeout=TIMEOUT):
+        """
+        Opens a port and waits for the greeting message from Arduino. If greeting message is 
+        correct, returns True, otherwise False. Closes the port afterwards.
+        """
+        
+        # Temporary closing the loadcell port
+        # To be removed
+        try:
+            self.loadcell_port.close()
+            time.sleep(init_delay*20)
+        except:
+            pass
+        
+        # Opening the port
+        port = serial.Serial(loadcell_port_name, baudrate=baudrate, timeout=timeout)
+        # Giving the port a few moments to open. Otherwise it may fail.
+        #time.sleep(init_delay*20)
+        
+        for attempt in range(attempts):
+            # Recording the welcome message
+            message = self._readAll(port, delay=init_delay)
+            # Comparing the welcome message to the load cell controller
+            expected_message = LOADCELL_WELCOME
+            if re.search(pattern=expected_message, string=message):
+                # Found a match, stopping cycle and returning True
+                # Closing the port
+                port.close()
+                return True
+        # If a program reached here, that means no matches were found during all the attempts.
+        port.close()
+        return False
+        
+    
+    def _verifyCartesianPort(self, cartesian_port_name, attempts=10, baudrate=BAUDRATE, timeout=TIMEOUT):
+        """
+        Opens a port and sends a "version" command for smoothieboard. Waits for the reply.
+        Will repeat specified number of attempts.
+        If the request matches the expected, returns True, otherwise False.
+        """
+        try:
+            self.cartesian_port.close()
+        except:
+            pass        
+            
+        # Opening the port
+        port = serial.Serial(cartesian_port_name, baudrate=baudrate, timeout=timeout)
+        
+        for attempt in range(attempts):
+            # Sending "version" request
+            message = self._writeAndWait(port=port, expression='version', eol='\n', confirm_message='\n')
+            expected_message = SMOOTHIE_STATUS_REPLY
+            if re.search(pattern=expected_message, string=message):
+                # Found a match, stopping cycle and returning True
+                # Closing the port
+                port.close()
+                return True
+        # If a program reached here, that means no matches were found during all the attempts.
+        port.close()
+        return False
+        
     
 # ==========================================================================================
 # Pipette functions
     
-
     def writePipette(self, expression):
-        self._write(port=self.pipette_port, expression=expression, eol='\r')    
-    
+        """
+        TODO:
+        Left for compatibility, to be removed.
+        """
+        self._write(port=self.cartesian_port, expression=expression, eol='\r')    
     
     def writeAndWaitPipette(self, expression, confirm_message="Idle"):
         """
-        Function will write an expression to the device and wait for the proper response.
-        
-        Use this function to make the devise perform a physical operation and
-        make sure program continues after the operation is physically completed.
-        
-        Function will return an output message
+        Same as writeAndWaitCartesian.
+        Left for compatibility.
+        TODO: to be removed
         """
-        self.writePipette(expression)
+        return self.writeAndWaitCartesian(expression)
         
-        full_message = ""
-        while True:
-            message = self._readAll(self.pipette_port)
-            if message != "":
-                full_message += message
-                if re.search(pattern=confirm_message, string=full_message):
-                    break
-            self.writePipette("?")
-
-        return full_message
-    
     def pipetteSetSpeed(self, speed):
-        self.writePipette('$110='+str(speed))
-    
+        """
+        Same as self.setSpeedPipette(speed)
+        """
+        self.setSpeedPipette(speed)
     
     def pipetteHome(self):
-        self.writeAndWaitPipette('$X')
-        self.pipetteMove(5)
-        self.writeAndWaitPipette('$H')
-        self.pipetteServoUp()
-        
-    
-    def pipetteUnlock(self):
-        self.writeAndWaitPipette('$X')
-    
-    
-    def pipetteMove(self, dist):
-        dist = dist * -1.0 # Comment this if the firmware settings are changed to output positive position value
-        self.writeAndWaitPipette('G0 X'+str(dist))
-        
-    
-    def pipetteServoUp(self):
-        self.writeAndWaitPipette('M3 S10')
-        
-    
-    def pipetteServoDown(self):
-        self.writeAndWaitPipette('M3 S115')
-    
-    
-    def _getPipetteCurrentPosition_Raw(self):
         """
-        Returns a raw number for the current pipette position, in absolute coordinates.
-        Beware of "-" sign; may change depending on robot current version
+        Same as self.home(part='pipette')
         """
-        msg = self.writeAndWaitPipette("?")
-        msg1 = re.split("MPos:", msg)[1]
-        coord_str = re.split(",", msg1)[0]
-        coord = float(coord_str)
-        return coord
+        self.home(part='pipette')
+    
+    def pipetteMove(self, dist, speed=None):
+        self.moveAxis('A', dist, speed=speed)
+    
+    def pipetteServoPowerUp(self):
+        """
+        Powers pipette servo up.
+        The servo will be moved to the position specified by movePipetteServoAngle() function,
+        or the default position.
+        """
+        self.writeAndWaitCartesian('M42')   # Turns power on
+        self.writeAndWaitCartesian('M400')  # Waits for all commands to complete
+        
+    def pipetteServoPowerDown(self):
+        """
+        Powers pipette servo down.
+        """
+        self.writeAndWaitCartesian('M43')   # Turns power off
+        self.writeAndWaitCartesian('M400')  # Waits for all commands to complete
+    
+    def movePipetteServoAngle(self, angle, delay=0.2):
+        """
+        Moves the servo to the specified angle.
+        Angle is NOT in degrees, but in the arbitrary values.
+        Specify angle=2.5 for the servo horn to be parallel to the ground (no tip dispence)
+        Speficy angle=7.3 for the servo horn to be vertical (tip will be dropped when plunger moves down).
+        
+        This function will not change the servo power; use pipetteServoPowerUp and pipetteServoPowerDown functions.
+        """
+        self.writeAndWaitCartesian('M400')                  # Waits for all commands to complete
+        self.writeAndWaitCartesian('M280.1 S'+str(angle))   # Sends the command to move the servo
+        self.writeAndWaitCartesian('M400')                  # Waits for all commands to complete
+        time.sleep(delay)                                   # Waits for servo to physically move
+                                                            # Smoothieboard does not read servo position
+        
+    
+    def pipetteServoUp(self, poweroff=True):
+        """
+        Moves pipette servo to "disengaged" position. The tip will not drop when plunger moves down.
+        """
+        angle = self.getTipDropServoUpAngle()
+        self.pipetteServoPowerUp()
+        self.movePipetteServoAngle(angle)
+        if poweroff:
+            self.pipetteServoPowerDown()
+        
+    
+    def pipetteServoDown(self, poweroff=False):
+        """
+        Moves pipette servo to "engaged" position. The tip will drop when plunger moves down.
+        """
+        angle = self.getTipDropServoDownAngle()
+        self.pipetteServoPowerUp()
+        self.movePipetteServoAngle(angle)
+        if poweroff:
+            self.pipetteServoPowerDown()
+    
+    def setPlungerMaxCoord(self, coordinate):
+        self._setSetting('maximum_plunger_movement_coordinate', coordinate)
+        
+    def getPlungerMaxCoord(self):
+        return self._getSetting('maximum_plunger_movement_coordinate')
+    
+    
+    def setTipDropServoUpAngle(self, angle):
+        """
+        Sets "angle" (arbitrary units), at which the servo horn will be parallel to the ground.
+        The plunger will not dispence the attached tip when servo is in this position.
+        Arbitrary units, specify range between about 2 to 10.
+        """
+        self._setSetting('tip_drop_servo_up_angle', angle)
+    
+    
+    def setTipDropServoDownAngle(self, angle):
+        """
+        Sets "angle" (arbitrary units), at which the servo horn will be perpendicular to the ground.
+        The plunger will drop the attached tip when servo is in this position.
+        Arbitrary units, specify range between about 2 to 10.
+        """
+        self._setSetting('tip_drop_servo_down_angle', angle)
+    
+    
+    def getTipDropServoUpAngle(self):
+        return self._getSetting('tip_drop_servo_up_angle')
+        
+    
+    def getTipDropServoDownAngle(self):
+        return self._getSetting('tip_drop_servo_down_angle')
     
     def _getPipetteCurrentPosition(self):
         """
         Returns current pipette position in the same form as accepted by pipetteMove function.
         Plunger shall not move if the value returned by this function is fed to pipetteMove function.
         """
-        h = self._getPipetteCurrentPosition_Raw()
-        h = h * -1.0 # Comment this if the firmware settings are changed to output positive position value
-        return h
+        return self.getPosition('A')
     
     
     def setTipLength(self, length):
@@ -241,7 +424,10 @@ class robot(data):
         return self._getSetting('added_tip_length')
 
 
-    def tipPickupAttempt(self, wrong_hit_threshold=9.5, initial_force=200, final_force=1800, final_pickup_dist=7.5):
+    def tipPickupAttempt(self, initial_force=100, final_force=1000):
+        wrong_hit_threshold = self.tips_rack.getProperPickupdZ()
+        final_pickup_dist = self.tips_rack.getTipPickupdZ()
+        
         Z_start = self.getPosition(axis='Z')
         Z_calibrated = self.tips_rack.getZ()
         Z_wrong_hit_abs = Z_calibrated - wrong_hit_threshold
@@ -305,7 +491,9 @@ class robot(data):
         return False
     
     
-    def pickUpTip(self, column, row, fine_approach_dz=12.5, raise_z=0, raise_dz_with_tip=60, dx=0, dy=0):
+    def pickUpTip(self, column, row, raise_z=0, dx=0, dy=0):
+        # Getting a relative height to which it is safe to approach the tips (without hitting them)
+        fine_approach_dz = self.tips_rack.getFineApproachdZ()
         # Moving towards the tip
         self.moveToWell(rack_name='tips', column=column, row=row, save_height=fine_approach_dz)
         # Optional correction (mostly for debugging)
@@ -319,8 +507,9 @@ class robot(data):
             # This is to rescue the protocol. Must recalibrate next time.
             print("Tip calibration is off. Please recalibrate tip rack before running another protocol.")
             self.lookForTip()
-        x, y, z = self.getPosition()
+        x, y, z, a = self.getPosition()
         # Moving up with the tip
+        raise_dz_with_tip = self.tips_rack.getRaiseWithTipdZ()
         self.moveAxisDelta('Z', -raise_dz_with_tip)
         self.tip_attached = 1
         # Letting the rack know that the tip was picked from there
@@ -334,7 +523,10 @@ class robot(data):
         Dumps the tip at current XYZ position.
         """
         self.pipetteServoDown()
-        self.pipetteMove(40)
+        # Initial move (fast)
+        self.pipetteMove(self._getDumpTipPlungerMovement()-15, speed=self._getSetting("speed_pipette"))
+        # Move slowly to hit the tip (stepper may skip steps if moved fast)
+        self.pipetteMove(self._getDumpTipPlungerMovement(), speed=1000)
         self.tip_attached = 0
         self.pipetteMove(1)
         self.pipetteServoUp()
@@ -352,6 +544,13 @@ class robot(data):
         self.tips_rack.add(column, row) # Letting tip rack know that there is a new tip there.
         self.moveToWell('tips', column, row)
     
+    def _setDumpTipPlungerMovement(self, plunger_movement):
+        self._setSetting('plunger_movement_when_dumping_tip', plunger_movement)
+        
+    def _getDumpTipPlungerMovement(self):
+        return self._getSetting('plunger_movement_when_dumping_tip')
+    
+    
     def returnTipBack(self):
         col, row = self.last_tip_coord
         self.dumpTipToPosition(col, row)
@@ -367,6 +566,62 @@ class robot(data):
         self.last_tip_coord = (col, row)
         return self.last_tip_coord
 
+
+    def _linearFunction(self, x, slope, intercept):
+        return slope * x + intercept
+    
+    def fitPipettePositionVsVolumeLine(self, calib_dict):
+        """
+        Fits the line to the provided dependence of plunger movement vs measured volume,
+        to get the coefficients for calculating plunger movement required to pipette given volume.
+        
+        Inputs:
+            calib_dict
+                Dictionary of calibration plunger vs volume data points. 
+                Format: {pos1:vol1, pos2:vol2, ...}
+        Returns:
+            slope, intercept
+                coefficient of the linear function: position = slope * volume + intercept
+        """
+        calib_series = pd.Series(calib_dict)
+        popt,pcov = curve_fit(self._linearFunction, calib_series, calib_series.index)
+        slope = popt[0]
+        intercept = popt[1]
+        return slope, intercept
+    
+    def fitVolumeVsPipettePositionLine(self, calib_dict):
+        """
+        Fits the line to the provided dependence of plunger movement vs measured volume,
+        to get the coefficients for calculating volume pipetted with given plunger movement.
+        
+        Inputs:
+            calib_dict
+                Dictionary of calibration plunger vs volume data points. 
+                Format: {pos1:vol1, pos2:vol2, ...}
+        Returns:
+            slope, intercept
+                coefficient of the linear function: volume = slope * position + intercept
+        """
+        calib_series = pd.Series(calib_dict)
+        popt,pcov = curve_fit(self._linearFunction, calib_series.index, calib_series)
+        slope = popt[0]
+        intercept = popt[1]
+        return slope, intercept
+    
+    
+    def calibratePipette(self, calib_data, how='dict'):
+        """
+        Updates pipette calibration given the calibration data
+        """
+        if how == 'dict':
+            slopeAvsV, interceptAvsV = self.fitPipettePositionVsVolumeLine(calib_data)
+            slopeVvsA, interceptVvsA = self.fitVolumeVsPipettePositionLine(calib_data)
+        else:
+            print("Provided calibration format is not supported yet.")
+            return
+        self.setPipetteVolumeConstants(slope=slopeAvsV, intercept=interceptAvsV)
+        self.setVolumeFromPlungerPositionConstants(slope=slopeVvsA, intercept=interceptVvsA)
+    
     
     def setPipetteVolumeConstants(self, slope, intercept):
         """
@@ -391,6 +646,16 @@ class robot(data):
         intercept = self._getSetting('volume_to_position_intercept')
         return slope, intercept
         
+    def setVolumeFromPlungerPositionConstants(self, slope, intercept):
+        self._setSetting('position_to_volume_slope', slope)
+        self._setSetting('position_to_volume_intercept', intercept)
+        
+    def getVolFromPlungerPosConst(self):
+        slope = self._getSetting('position_to_volume_slope')
+        intercept = self._getSetting('position_to_volume_intercept')
+        return slope, intercept
+    
+    # TODO: Unit tests for this
     def calcPipettePositionFromVolume(self, volume):
         """
         Re-calculates volume (in uL) into plunger position
@@ -398,9 +663,13 @@ class robot(data):
         """
         k, b = self.getPipetteVolumeConstants()
         position = volume * k + b
-        # Adding "-" because k, b were calculated for negative movement
-        # TODO: re-calculate k,b; remove "-"
-        return -position
+        return position
+        
+    
+    def calcVolFromPipettePosition(self, a):
+        k, b = self.getVolFromPlungerPosConst()
+        volume = a * k + b
+        return volume
     
 
     def movePipetteToVolume(self, volume):
@@ -449,7 +718,7 @@ class robot(data):
         # Finding volume from where to perform approach
         # Alternatively, user can provide their own V (overrides stored data)
         if V_probe is None:
-            V_probe = sample.stype.getCloseToBottomVol()
+            V_probe = sample.getCloseToBottomVol()
         # Using volume, finding absolute Z from where to perform approach
         # Alternatively, user can provide their own Z (overrides stored data)
         if Z_probe is None:
@@ -482,10 +751,76 @@ class robot(data):
             Z_bottom = self._probeTubeZBottom(sample, in_place=in_place)
         return Z_bottom
     
+    def setLiquidUptakeLowVolBottomOffset(self, offset):
+        """
+        Tube bottom offset when uptaking liquid from the tube where only low volume is present.
+        When uptaking, the tip will be away from the bottom of the tube on this value.
+        Usually in the range between 0.1 to 0.5 mm.
+        """
+        self._setSetting('liquid_uptake_low_volume_bottom_offset', offset)
+        
+    def getLiquidUptakeLowVolBottomOffset(self):
+        """
+        Tube bottom offset when uptaking liquid from the tube where only low volume is present.
+        When uptaking, the tip will be away from the bottom of the tube on this value.
+        Usually in the range between 0.1 to 0.5 mm.
+        """
+        return self._getSetting('liquid_uptake_low_volume_bottom_offset')
+
+    def _uptakeRemainingLiquidFromTheSide(self, axis, radius, delay, dZ, plunger_volume_position):
+        """
+        When trying to uptake all the liquid from the tube (and not caring about the exact volume), 
+        this function will move pipette to the side of the tube along a given axis for the radius distance.
+        It will lower Z axis on dZ mm, then move the plunger to a new plunger_volume_position.
+        It waits for the "delay" seconds, after that moves Z back up to the same dZ.
+        It waits again for the delay seconds, after which it moves pipette back along same axis.
+        
+        Inputs:
+            axis
+                X or Y. Axis at which to move the pipette
+            radius
+                distance from the center of the tube at which to perform the uptake
+            delay
+                how many seconds to wait after moving the plunger up and then after lifting Z from the bottom
+            dZ
+                Distance at which to move Z axis when uptaking the liquid.
+            plunger_volume_position
+                Position of a plunger in microliters.
+        """
+        self.moveAxisDelta(axis, radius)
+        self.moveAxisDelta('Z', dZ)
+        self.movePipetteToVolume(plunger_volume_position)
+        time.sleep(delay)
+        self.moveAxisDelta('Z', -dZ)
+        time.sleep(delay)
+        self.moveAxisDelta(axis, -radius)
+
     
-    def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, in_place=False):
+    def _uptakeLiquidFromLowVolumeTube(self, init_uptake_vol_position, R, T, init_delay=0.5):
+        liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+        self.movePipetteToVolume(init_uptake_vol_position)
+        time.sleep(init_delay)
+        # Moving slightly up
+        self.moveAxisDelta('Z', -liquid_uptake_low_volume_bottom_offset)
+        time.sleep(init_delay)
+        vol_per_step = init_uptake_vol_position/4.0
+        self._uptakeRemainingLiquidFromTheSide('X', R, T, 
+                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-vol_per_step)
+        self._uptakeRemainingLiquidFromTheSide('X', -R, T, 
+                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-2*vol_per_step)                    
+        self._uptakeRemainingLiquidFromTheSide('Y', R, T, 
+                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-3*vol_per_step)
+        self._uptakeRemainingLiquidFromTheSide('Y', -R, T, liquid_uptake_low_volume_bottom_offset, 0)
+
+    
+    def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, in_place=False,
+                     ignore_calibration=False):
         """
         Uptakes selected amount of liquid from the sample.
+        This function won't check whether the liquid amount exceeds the pipette capability.
+        User should not provide volume value that exceeds the maximum volume of the pipette.
+        Robot will just try to push plunger down according to the plunger vs V calibration, hitting the 
+        bottom and skipping steps. If this happens, homing is necessary.
             Inputs:
                 sample
                     object of a sample class; the sample from which to take the liquid.
@@ -504,6 +839,11 @@ class robot(data):
                 v_insert_override
                     If specified, the robot will insert the tip to this volume, ignoring everyting else.
                     Specifying 0 will get to the perseived bottom of the tube
+                ignore_calibration
+                    If True, robot will perform tube bottom calibration, even if it was already done before.
+                    New value will be stored in sample data.
+                    Useful when it is critical to uptake all the volume from the bottom, or if you suspect the 
+                    sample may loose its calibration.
         """
         
         pipetting_delay = self.getPipetteDelay(sample=sample)
@@ -514,71 +854,112 @@ class robot(data):
         # Correcting for upward lag
         self.movePipetteToVolume(volume+lag_vol_down)
         
+        # Identifying depth to immerse into the sample
+        sample_has_low_volume = sample._isLowVolumeUptakeNeeded(volume+lag_vol_down)
+        
+        liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+        tube_bottom_is_calibrated = sample._settingPresent('tube_bottom_z')
+        not_ignoring_calibration = not ignore_calibration
+        
         if v_insert_override is not None:
-            # Inserting height is manually specified. Used for instance for pipetting up and down
             z_immers = sample.calcAbsLiquidLevelFromVol(v_insert_override, added_length=self._calcExtraLength())
-            if not in_place:
-                self.moveToSample(sample, z=z_immers)
-            self.movePipetteToVolume(0)
-            time.sleep(pipetting_delay)
-            self.movePipetteToVolume(lag_vol_down)
-        elif sample._isLowVolumeUptakeNeeded(volume+lag_vol_down):
-            # Moving to the critical volume
-            vol_to_immers_approx = sample.stype.getCloseToBottomVol()
-            z_immers_approx = sample.calcAbsLiquidLevelFromVol(vol_to_immers_approx, 
-                                                               added_length=self._calcExtraLength())
-            
-            # checking whether the sample bottom was touched before
-            if sample._settingPresent('tube_bottom_z'):
-                z_lowest = sample.getZBottom() - 0.5
-                if z_immers_approx > z_lowest:
-                    z_immers_approx = z_lowest
-                if not in_place:
-                    self.moveToSample(sample, z=z_immers_approx)
-                self.movePipetteToVolume(0)
-                time.sleep(pipetting_delay)
-                self.movePipetteToVolume(lag_vol_down)
+        else:
+            if sample_has_low_volume:
+                # Finding approximate tube bottom coordinate.
+                # It will be refined in the future
+                tip_length_compensation = self._calcExtraLength()
+                z_immers = sample.getCloseToBottomZ(tip_length_compensation)
+                if tube_bottom_is_calibrated and not_ignoring_calibration:
+                    # Overwriting the approximate bottom Z coordinate with the precise calibrated ones
+                    z_immers = sample.getZBottom() - liquid_uptake_low_volume_bottom_offset
             else:
-                # If robot never touched the sample bottom before, perform 
-                # gradual approach to discover safe bottom coordinate
-                if not in_place:
-                    self.moveToSample(sample, z=z_immers_approx)
-                # Approaching the bottom of the tube
-                z_sample_bottom = self.moveDownUntilPress(step=0.2, threshold=200)
-                # Recording Z coordinate at which all liquid will be uptaken for the sample
-                # 0.5 means that liquid uptake will happen 0.5 mm above the bottom
-                # TODO: transfer this for the sample type or robot setting.
-                sample.setZBottom(z_sample_bottom)
-                # Recording for the sample that the bottom was touched
-                sample.setBottomTouched()
-                step, steps_number, delay = sample.stype.getLowVolUptakeParameters()
-                remaining_vol = volume
-                vol_per_step = volume / steps_number
-                for i in range(steps_number):
-                    remaining_vol = remaining_vol - vol_per_step
-                    self.movePipetteToVolume(remaining_vol)
-                    time.sleep(delay)
-                    self.moveAxisDelta('Z', -step)
-                self.movePipetteToVolume(0)
-                time.sleep(delay)
-                self.movePipetteToVolume(lag_vol_down)
+                # Normal uptake procedure
+                z_immers = sample.calcNormalPipettingZ(
+                            v_uptake=volume, v_lag=lag_vol_down, added_length=self._calcExtraLength())
+        
+        # Moving Z axis so the tip is touching the bottom of the tube
+        if not in_place:
+            self.moveToSample(sample, z=z_immers)
+        
+        # Checking whether the tube bottom needs to be calibrated.
+        # Will be calibrated either if it was never done before, or if there are explicit instructions to ignore_calibration
+        # the previous calibration
+        if v_insert_override is None:
+            if sample_has_low_volume:
+                if (not tube_bottom_is_calibrated) or ignore_calibration:
+                    # Approaching the bottom of the tube
+                    z_sample_bottom = self.moveDownUntilPress(step=0.1, threshold=100)
+                    # Recording Z coordinate at which all liquid will be uptaken for the sample
+                    sample.setZBottom(z_sample_bottom)
+                    # Recording for the sample that the bottom was touched
+                    sample.setBottomTouched()
+                    # Moving a notch up so the tip hole is not blocked
+                    self.moveAxisDelta('Z', -liquid_uptake_low_volume_bottom_offset)
+        
+        # Deciding whether to follow a low volume uptake or a normal uptake
+        if sample_has_low_volume:
+            # Low volume uptake procedure
+            # Uptaking liquid
+            self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=volume*0.8, R=2, T=0.5, init_delay=0.5)
+            # Waiting after last step (maybe some liquid left)
+            time.sleep(0.5)
+            # Eliminating the lag
+            self.movePipetteToVolume(lag_vol_down)
         else:
             # Normal uptake procedure
-            z_immers = sample.calcNormalPipettingZ(
-                            v_uptake=volume, v_lag=lag_vol_down, added_length=self._calcExtraLength())
-            if not in_place:
-                self.moveToSample(sample, z=z_immers)
             self.movePipetteToVolume(0)
             time.sleep(pipetting_delay)
             self.movePipetteToVolume(lag_vol_down)
-        
-        # Correcting the volume
+                    
+        # Changing the volume record in the sample data, to record the liquid removal
         init_sample_vol = sample.getVolume()
         final_sample_vol = init_sample_vol - volume
         if final_sample_vol < 0:
             final_sample_vol = 0
         sample.setVolume(final_sample_vol)
 
+
+    def uptakeAllLiquid(self, sample, extra_vol=50, z_safe=50, ignore_calibration=True, R=2, T=0.5):
+        """
+        Tries to uptake all liquid from the bottom of the tube
+        """
+        x, y = sample.getCenterXY()
+        tip_length_compensation = self._calcExtraLength()
+        z_near_bottom = sample.getCloseToBottomZ(tip_length_compensation)
+        self.move(z=z_safe)
+        self.moveToSample(sample=sample)
+        
+        # Setting the plunger
+        volume = sample.getVolume()
+        volume_to_uptake = volume + extra_vol
+        if volume_to_uptake > 250:
+            # Robot will be unable to uptake all liquid at this point
+            return False
+        
+        self.movePipetteToVolume(volume_to_uptake)
+        
+        self.move(z=z_near_bottom)
+        
+        
+        tube_bottom_is_calibrated = sample._settingPresent('tube_bottom_z')
+        not_ignoring_calibration = not ignore_calibration
+        if tube_bottom_is_calibrated and not_ignoring_calibration:
+            z_lowest = sample.getZBottom()
+        else:
+            z_lowest = self.moveDownUntilPress(step=0.1, threshold=100)
+        
+        liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
+        z_start_uptake = z_lowest - liquid_uptake_low_volume_bottom_offset
+        
+        # Moving robot to the pipetting position
+        self.move(z=z_start_uptake)
+        
+        # Uptaking liquid
+        self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=extra_vol, R=R, T=T, init_delay=T)
+        
+        sample.setVolume(0)  # All liquid must have been uptaken
+        
+        return True
 
     
     def dispenseLiquid(self, sample, volume, extra_vol_insert=100, in_place=False, plunger_retract=True, 
@@ -627,7 +1008,7 @@ class robot(data):
         # Blowing extra volume
         if blow_extra: 
             # Moving down all the way
-            self.pipetteMove(40)
+            self.pipetteMove(self.getPlungerMaxCoord())
         
         if move_up_after:
             z_up = sample.calcAbsLiquidLevelFromVol(V_max, added_length=self._calcExtraLength())
@@ -795,13 +1176,13 @@ class robot(data):
         v_max = sample.stype.getMaxVolume()
         z_out = sample.calcAbsLiquidLevelFromVol(v_max, added_length=self._calcExtraLength())
         self.moveToSample(sample, z=z_out)
-        self.pipetteMove(40)
+        self.pipetteMove(self.getPlungerMaxCoord())
         time.sleep(mix_delay)
         # Moving pipette to the top
         self.pipetteMove(0)
         
 
-    def mixByScript(self, sample, script, vol_uptake_fraction=0.8):
+    def mixByScript(self, sample, script=None, vol_uptake_fraction=0.8):
         """
         Mixes liquid in the sample according to provided script.
         
@@ -810,12 +1191,15 @@ class robot(data):
                 Sample object
             script
                 Pandas DataFrame object containing table of movements that needs to be done
-                to perform mixing.
+                to perform mixing. By default, function will load it from the sample properties.
             vol_uptake_fraction=0.8
                 Indicates the persentage of liquid inside the tube to perform mixing with.
         """
         
         # Obtaining sample properties
+        # mix script
+        if script is None:
+            script = sample.stype.getMixScript()
         # Liquid volume currently inside the tube
         v_in = sample.getVolume()
         # Maximum volume that the tube may have
@@ -885,7 +1269,7 @@ class robot(data):
         # Moving to the top of the sample
         self.moveToSample(sample, z=z_max, z_hop=0)
         # Moving plunger all the way down to remove any residual liquid in the tip
-        self.pipetteMove(40)
+        self.pipetteMove(self.getPlungerMaxCoord())
         # Waiting for all the liquid to drop
         time.sleep(d)
         # Touching tube wall to remove any remaining droplets
@@ -896,7 +1280,8 @@ class robot(data):
         
 
     def transferLiquid(self, source, destination, volume, lag_vol=5, dry_tube=False, v_immerse_dispense=100,
-                       touch_wall=True, safe_z=50):
+                       touch_wall=True, safe_z=50, ignore_calibration=False, dry_tube_extra_uptake_v=50,
+                       source_tube_radius=2, delay=0.5):
         """
         Transfer liquid from one source tube to the other destination tube.
         Extra air will be blown to the destination tube to ensure all the liquid from the tip gets to the tube.
@@ -925,17 +1310,28 @@ class robot(data):
         for i in range(int(volume // 200)):
             v_list.append(200)
         v_remain = volume - 200 * (volume // 200)
-        if v_remain > 0:
+        if (v_remain > 0) and (not dry_tube):
             v_list.append(v_remain)
+            
         
         for v in v_list:
             self.move(z=safe_z)
-            self.uptakeLiquid(source, v, lag_vol=lag_vol, dry_tube=dry_tube)
+            self.uptakeLiquid(source, v, lag_vol=lag_vol, dry_tube=dry_tube, ignore_calibration=ignore_calibration)
             self.move(z=safe_z)
             self.dispenseLiquid(destination, v, extra_vol_insert=v_immerse_dispense, blow_extra=True)
             if touch_wall:
                 self.touchWall(destination)
-            
+        
+        # If the goal is to remove all available liquid from the tube:
+        if dry_tube:
+            self.move(z=safe_z)
+            self.uptakeAllLiquid(source, extra_vol=dry_tube_extra_uptake_v, z_safe=safe_z, 
+                                 ignore_calibration=ignore_calibration, R=source_tube_radius, T=delay)
+            self.move(z=safe_z)
+            v_in_tip = v_remain + dry_tube_extra_uptake_v
+            self.dispenseLiquid(destination, v_in_tip, extra_vol_insert=v_immerse_dispense, blow_extra=True)
+            if touch_wall:
+                self.touchWall(destination)
 
 
 # ================================================================================
@@ -943,15 +1339,15 @@ class robot(data):
     
     
     def tareAll(self):
-        self.writeMisc('T')
+        self.writeLoadCell('T')
     
     
     def readRightLoad(self):
-        return float(self.writeAndWaitMisc('RR').strip())
+        return float(self.writeAndWaitLoadCell('RR').strip())
     
     
     def readLeftLoad(self):
-        return float(self.writeAndWaitMisc('RL').strip())
+        return float(self.writeAndWaitLoadCell('RL').strip())
     
 
     def getCombinedLoad(self):
@@ -967,18 +1363,29 @@ class robot(data):
 # ===================================================================================
 # Magnetic rack functions
     
-    
+    # TODO: Rework for smoothieware
     def rackPowerOn(self):
-        self.writeAndWaitMisc('P on')
+        self.writeAndWaitCartesian('M106')
     
-    
+    # TODO: Rework for smoothieware
     def rackPowerOff(self):
-        self.writeAndWaitMisc('P off')
+        self.writeAndWaitCartesian('M107')
         
-        
+    # TODO: Rework for smoothieware    
     def rackMoveMagnetsAngle(self, angle, delay=1.5):
-        self.writeAndWaitMisc('G0 '+str(angle))
-        time.sleep(delay)
+        """
+        Turns servo with magnets on specified angle.
+        Angle is set in the arbitrary number, NOT in degrees.
+        5.2 is the minimum; magnet lever will be in the lowermost position, away from the tubes.
+        11.2 is the maximum, magnet lever will be in the uppermost position, closest to the tubes.
+        
+        This function does not change the servo power, use rackPowerOn and rackPowerOff for that.
+        """
+        self.writeAndWaitCartesian('M400')              # Command to wait until all the commands are finished.
+        self.writeAndWaitCartesian('M280 S'+str(angle)) # Command to turn the servo
+        self.writeAndWaitCartesian('M400')              # Command to wait until all the commands are finished.
+        time.sleep(delay)                               # Wait for servo to actually turn
+                                                        # Smoothieboard does not have any feedback from the servo.
 
         
     def setMagnetsAwayAngle(self, angle):
@@ -997,15 +1404,14 @@ class robot(data):
         return self._getSetting('magnets_near_tube_angle')
     
     
-    def moveMagnetsAway(self, poweroff=False):
+    def moveMagnetsAway(self, poweroff=True):
         self.rackPowerOn()
         self.rackMoveMagnetsAngle(self.getMagnetsAwayAngle())
         if poweroff:
-            #time.sleep(1)
             self.rackPowerOff()
     
     
-    def moveMagnetsTowardsTube(self, poweroff=False):
+    def moveMagnetsTowardsTube(self, poweroff=True):
         self.rackPowerOn()
         self.rackMoveMagnetsAngle(self.getMagnetsNearTubeAngle())
         if poweroff:
@@ -1041,7 +1447,7 @@ class robot(data):
     def writeCartesian(self, expression):
         self._write(port=self.cartesian_port, expression=expression, eol='\r')
 
-
+    # TODO: smoothie must report about physically finishing the job, probably here.
     def writeAndWaitCartesian(self, expression):
         return self._writeAndWait(port=self.cartesian_port, expression=expression, eol='\r', confirm_message='ok\n')
 
@@ -1050,32 +1456,55 @@ class robot(data):
         if part == 'robot':
             self.robotHome()
         elif part == 'pipette':
-            self.pipetteHome()
+            self.robotHome(axis='A')
+            self.pipetteServoUp()
         elif part == 'magrack':
             self.moveMagnetsAway()
         else:
             self.robotHome()
-            self.pipetteHome()
             self.moveMagnetsAway()
+            self.pipetteServoUp()
+        self.powerStepperOff('A')
             
-    
+    # TODO: Rework for Smoothieware
     def robotHome(self, axis=None):
         try:
             axis = axis.upper()
         except:
             pass
         if axis is None:
-            self.writeAndWaitCartesian('G28 Z')
-            self.writeAndWaitCartesian('G28 XY')
+            self.writeAndWaitCartesian('$H')        # Homing all axes (X, Y, Z, and pipette)
         else:
-            self.writeAndWaitCartesian('G28 '+axis)
+            self.writeAndWaitCartesian('G28.2 '+axis)  # Homing one axis only
+        self.writeAndWaitCartesian('M400')          # Waiting for the end of movement
     
+    def setSpeedXY(self, speed):
+        self._setSetting('speed_XY', speed)
+        
+    def getSpeedXY(self):
+        return self._getSetting('speed_XY')
     
+    def setSpeedZ(self, speed):
+        self._setSetting('speed_Z', speed)
+        
+    def getSpeedZ(self):
+        return self._getSetting('speed_Z')
+        
+    def setSpeedPipette(self, speed):
+        self._setSetting('speed_pipette', speed)
+        
+    def getSpeedPipette(self):
+        return self._getSetting('speed_pipette')
+    
+    # TODO: Make speed a loadable parameter
     def getSpeed(self, axis):
+        axis = axis.upper()
         if axis == 'X' or axis == 'Y':
-            speed = 6000
+            speed = self.getSpeedXY()
         elif axis == 'Z':
-            speed = 3000
+            speed = self.getSpeedZ()
+        elif axis == 'A' or axis == 'PIPETTE' or axis == 'PLUNGER':
+            speed = self.getSpeedPipette()
         else:
             print("Wrong axis provided.")
             return
@@ -1101,12 +1530,13 @@ class robot(data):
         full_cmd = 'G0 X' + str(x) + ' Y' + str(y) + ' F' + str(speed)
         try:
             self.writeAndWaitCartesian(full_cmd)
+            self.writeAndWaitCartesian('M400')
         except:
             print ("Movement failed. The following command was sent:")
             print (full_cmd)
             return
 
-
+    # TODO: this function must be able to move all axis simultaneously (x, y, z, a)
     def move(self, x=None, y=None, z=None, z_first=True, speed_xy=None, speed_z=None):
         """
         Move robot to a new position with given absolute coordinates.
@@ -1167,6 +1597,9 @@ class robot(data):
         if speed is None:
             speed = self.getSpeed(axis)
         self.writeAndWaitCartesian('G0 '+axis+str(dist)+' F'+str(speed))
+        self.writeAndWaitCartesian('M400')
+        if axis == 'A':
+            self.powerStepperOff('A')
     
 
     def moveAxisDelta(self, axis, dist, speed=None):
@@ -1176,7 +1609,30 @@ class robot(data):
         pos = self.getPosition(axis=axis)
         new_pos = pos + dist
         self.writeAndWaitCartesian('G0 '+axis+str(new_pos)+' F'+str(speed))
+        self.writeAndWaitCartesian('M400')
+        if axis == 'A':
+            self.powerStepperOff('A')
     
+    
+    def powerSteppers(self):
+        self.writeAndWaitCartesian('M17')
+        self.writeAndWaitCartesian('M400')
+    
+    def powerStepperOff(self, axis=None):
+        """
+        Powers off the selected axis motor
+        Most useful for turning off the pipettor motor, as it tend to overheat.
+        """
+        if axis is None:
+            self.writeAndWaitCartesian('M18 X0')
+            self.writeAndWaitCartesian('M18 Y0')
+            self.writeAndWaitCartesian('M18 Z0')
+            self.writeAndWaitCartesian('M18 Z1')
+            self.writeAndWaitCartesian('M18 A0')
+        else:
+            axis = axis.upper()
+            self.writeAndWaitCartesian('M18 '+axis+'0')
+        self.writeAndWaitCartesian('M400')
 
     def getPosition(self, axis=None):
         """
@@ -1187,14 +1643,20 @@ class robot(data):
                 If specified as 'X', 'Y' or 'Z', will return the position only 
                 at this axis. Otherwise, will return a tuple of (X, Y, Z) positions.
         """
-        msg = self.writeAndWaitCartesian("M114")
-        msg_list = re.split(pattern=' ', string=msg)
-        x_str = msg_list[0]
-        y_str = msg_list[1]
-        z_str = msg_list[2]
-        x = float(re.split(pattern="\:", string=x_str)[1])
-        y = float(re.split(pattern="\:", string=y_str)[1])
-        z = float(re.split(pattern="\:", string=z_str)[1])
+        self.writeAndWaitCartesian('M400')
+        msg = self.writeAndWaitCartesian("?")
+        # msg will be in the form of:
+        # 'ok\n<Idle|MPos:0.0000,0.0000,1.0000,3.0000|WPos:0.0000,0.0000,1.0000|F:3000.0,100.0>\n'
+        # Now breaking on "|". Interested to get MPos:0.0000,0.0000,1.0000,3.0000
+        msg = re.split(pattern='\|', string=msg)[1]
+        # Now removing "MPos:". msg is 0.0000,0.0000,1.0000,3.0000
+        msg = re.split(pattern='\:', string=msg)[-1]
+        # Now splitting the remaining string into the single float values:
+        x = float(re.split(pattern=',', string=msg)[0])
+        y = float(re.split(pattern=',', string=msg)[1])
+        z = float(re.split(pattern=',', string=msg)[2])
+        a = float(re.split(pattern=',', string=msg)[3])
+        
         try:
             axis=axis.upper()
         except:
@@ -1205,8 +1667,10 @@ class robot(data):
             return y
         elif axis == 'Z':
             return z
+        elif axis == 'A':
+            return a
         else:
-            return x, y, z
+            return x, y, z, a
 
         
     def moveDownUntilPress(self, step, threshold, z_max=180, tare=True):
@@ -1473,6 +1937,14 @@ class robot(data):
 class rack(data):
     """
     Handles a rack info and functions
+    
+    Class Q&A:
+        Does it hold sample information anywhere?
+            No, there is no information about the samples anywhere. 
+            There is self.samples_dict, but it does not seem to be used anywhere. 
+            TODO: Consider removing.
+            All the properties for the samples are handled by the sample_type and sample classes.
+            
     """
     
     def __init__(self, name):
@@ -1519,6 +1991,16 @@ class rack(data):
                 Default: 0
         """
         return self._getSetting('calibration_Z') - added_length
+
+    def setXYCalibrationShift(self, y_shift_for_x, x_shift_for_y):
+        """
+        Specifies where to calibrate X and Y rack center (relative to the center).
+        """
+        self._setSetting('y_shift_for_x', y_shift_for_x)
+        self._setSetting('x_shift_for_y', x_shift_for_y)
+    
+    def getXYCalibrationShift(self):
+        return self._getSetting('y_shift_for_x'), self._getSetting('x_shift_for_y')
         
     def setZ(self, z):
         """
@@ -1575,6 +2057,7 @@ class rack(data):
                  dist_between_cols, dist_between_rows):
         """
         Specifies number of wells in the rack and their position relative to the center
+        This function assumes the wells are aligned as a rectangular grid (such as 96 wells plate)
         """
         self._setSetting('wells_x', wells_x)
         self._setSetting('wells_y', wells_y)
@@ -1583,19 +2066,48 @@ class rack(data):
         self._setSetting('well_diam', well_diam)
         self._setSetting('dist_between_cols', dist_between_cols)
         self._setSetting('dist_between_rows', dist_between_rows)
+        self._setSetting('wells_alignment', 'rectangular_grid') # Functions will calculate wells coordinates
+                                                               # for the rectangular grid
+
+    def setWellsCoordsCustom(self, coord_dict):
+        """
+        Use this function to manually provide the coordinates of the wells relative to the rack center.
+        Useful when the wells are not the square grid with the same distance between wells and columns.
+        Coordinates are provided in the form of the dictionary:
+        {0:(x0,y0, diameter0), 1:(x1,y1, diameter1), ...}
+        """
+        self._setSetting('wells_alignment', 'manual') # Functions will simply load the coordinates of 
+                                                      # each wells from the settings file
+        self._setSetting('wells_coordinates_dictionary', coord_dict)
+        
     
+    # Rework this function for rectangular grid only; maybe rename
     def getWellsParams(self):
-        x = self._getSetting('x_dist_center_to_well_00')
-        y = self._getSetting('y_dist_center_to_well_00')
-        columns = self._getSetting('wells_x')
-        rows = self._getSetting('wells_y')
-        well_diam = self._getSetting('well_diam')
-        dist_between_cols = self._getSetting('dist_between_cols')
-        dist_between_rows = self._getSetting('dist_between_rows')
-        return x, y, columns, rows, well_diam, dist_between_cols, dist_between_rows
+        alignment = self._getSetting('wells_alignment') # Detecting wells arrangement in the rack
+        if alignment == 'rectangular_grid':
+            x = self._getSetting('x_dist_center_to_well_00')
+            y = self._getSetting('y_dist_center_to_well_00')
+            columns = self._getSetting('wells_x')
+            rows = self._getSetting('wells_y')
+            well_diam = self._getSetting('well_diam')
+            dist_between_cols = self._getSetting('dist_between_cols')
+            dist_between_rows = self._getSetting('dist_between_rows')
+            return x, y, columns, rows, well_diam, dist_between_cols, dist_between_rows
+        elif alignment == 'manual':
+            coord_dict = self._getSetting('wells_coordinates_dictionary')
+            return coord_dict
     
-    def getWellDiameter(self):
-        return self._getSetting('well_diam')
+    def getWellDiameter(self, well_number=None):
+        alignment = self._getSetting('wells_alignment') # Detecting wells arrangement in the rack
+        if alignment == 'rectangular_grid':
+            diam = self._getSetting('well_diam')
+        elif alignment == 'manual':
+            if well_number is None:
+                well_number = 0
+            coord_dict = self.getWellsParams()
+            coord = coord_dict[well_number]
+            diam = coord[2]
+        return diam
     
     
     def getRackColRow(self):
@@ -1603,8 +2115,13 @@ class rack(data):
         Returns how many columns and rows the rack has.
         """
         return self._getSetting('wells_x'), self._getSetting('wells_y')
+
     
     def calcWellsXY(self):
+        """
+        Use this function only for the racks that has rectangular grid arrangement of the wells 
+        (for example, 96 wells plates)
+        """
         x_rack_center, y_rack_center = self.getCenterXY()
         x_well_0_rel, y_well_0_rel, columns, rows, well_diam, dist_between_cols, dist_between_rows = self.getWellsParams()
         
@@ -1630,8 +2147,31 @@ class rack(data):
     
     
     def calcWellXY(self, column, row):
-        coord_list = self.calcWellsXY()
-        return coord_list[column][row][0], coord_list[column][row][1]
+        """
+        Returns (x, y) coordinates of a well in the rack.
+        For rectangular grid arrangement (such as 96 wells plates), provide column and row 
+        coodinates of the well.
+        For the manual arrangement, provide column=0, row is the number of the well in 
+        the well coordinates dictionary.
+        """
+        alignment = self._getSetting('wells_alignment') # Detecting wells arrangement in the rack
+        if alignment == 'rectangular_grid':
+            # Function calcWellsXY returns final coordinates of the well
+            coord_list = self.calcWellsXY()
+            x = coord_list[column][row][0]
+            y = coord_list[column][row][1]
+        elif alignment == 'manual':
+            # Those are the coordinates relative to the rack center
+            coord_dict = self._getSetting('wells_coordinates_dictionary')
+            coord = coord_dict[str(row)]
+            x0 = coord[0]
+            y0 = coord[1]
+            # Absolute coordinates of the rack center:
+            x_rack_center, y_rack_center = self.getCenterXY()
+            # Calculating absolute coordinates of the well:
+            x = x_rack_center - x0
+            y = y_rack_center - y0
+        return x, y
     
     
     def getInitialCalibrationXY(self, added_z_length=0):
@@ -1640,6 +2180,7 @@ class rack(data):
             # This case happens if the rack is to be calibrated from outside (like samples rack), or 
             # using a large hole inside (like the tip rack or waste rack).
             x, y = self.getCenterXY() # X and Y coordinates of the center of the rack
+            y_shift_for_x, x_shift_for_y = self.getXYCalibrationShift()
             # X, Y, Z dimensions of the rack
             max_x, max_y, max_z = self.getRackSize()
             # Calculating edges of the rack
@@ -1663,10 +2204,10 @@ class rack(data):
         # Z coordinate at which calibration is started
         z = self.getCalibrationZ(added_length=added_z_length)
         # Formatting the calibration points coordinates. All in the form of (x, y, z)
-        p1 = (x_edge_1, y, z)
-        p2 = (x_edge_2, y, z)
-        p3 = (x, y_edge_1, z)
-        p4 = (x, y_edge_2, z)
+        p1 = (x_edge_1, y+y_shift_for_x, z)
+        p2 = (x_edge_2, y+y_shift_for_x, z)
+        p3 = (x+x_shift_for_y, y_edge_1, z)
+        p4 = (x+x_shift_for_y, y_edge_2, z)
         return p1, p2, p3, p4, style
         
     def calcCenterFromWellXY(self, x, y, column=None, row=None):
@@ -1722,6 +2263,7 @@ class rack(data):
             print ("which='absolute' will give absolute coordinates.")
             return
         
+
 
 
 class consumable(rack):
@@ -1781,3 +2323,61 @@ class consumable(rack):
         if consume:
             self.consume(col, row)
         return col, row
+
+
+
+    def setFineApproachdZ(self, fine_approach_dz):
+        """
+        Sets a coordinate relative to the calibrated consumable rack z, at which it is 
+        safe to approach without hitting any consumable (tips), even when the rack is 
+        not calibrated correctly.
+        """
+        self._setSetting('fine_approach_dz', fine_approach_dz)
+        
+    def getFineApproachdZ(self):
+        """
+        Returns a coordinate relative to the calibrated consumable rack z, at which it is 
+        safe to approach without hitting any consumable (tips), even when the rack is 
+        not calibrated correctly.
+        """
+        return self._getSetting('fine_approach_dz')
+    
+    def setProperPickupdZ(self, proper_pickup_dz):
+        """
+        If robot get to this height relative to the calibrated rack height without triggering the 
+        load cells, that means the tip pickup is going as intended.
+        """
+        self._setSetting('proper_pickup_dz', proper_pickup_dz)
+
+
+    def getProperPickupdZ(self):
+        """
+        Returns z coordinate relative to the calibrated rack z. 
+        If robot get to this height relative to the calibrated rack height without triggering the 
+        load cells, that means the tip pickup is going as intended.
+        """
+        return self._getSetting('proper_pickup_dz')
+    
+    def setTipPickupdZ(self, tip_pickup_dz):
+        """
+        At this z coordinate relative to the calibrated rack z, start pressing on the tip to pick it up.
+        The tip is already loosely touching the pipette. Just 1 mm or so to move down to pick it up.
+        """
+        self._setSetting('tip_pickup_dz', tip_pickup_dz)
+        
+    def getTipPickupdZ(self):
+        """
+        Returns a z coordinate relative to the calibrated rack z.
+        At this z coordinate relative to the calibrated rack z, start pressing on the tip to pick it up.
+        The tip is already loosely touching the pipette. Just 1 mm or so to move down to pick it up.
+        """
+        return self._getSetting('tip_pickup_dz')
+    
+    
+    def setRaiseWithTipdZ(self, raise_with_tip_dz):
+        self._setSetting('raise_with_tip_dz', raise_with_tip_dz)
+        
+    def getRaiseWithTipdZ(self):
+        return self._getSetting('raise_with_tip_dz')
+        
+    
