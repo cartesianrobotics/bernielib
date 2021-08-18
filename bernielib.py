@@ -424,7 +424,10 @@ class robot(data):
         return self._getSetting('added_tip_length')
 
 
-    def tipPickupAttempt(self, wrong_hit_threshold=9.5, initial_force=100, final_force=1000, final_pickup_dist=7.5):
+    def tipPickupAttempt(self, initial_force=100, final_force=1000):
+        wrong_hit_threshold = self.tips_rack.getProperPickupdZ()
+        final_pickup_dist = self.tips_rack.getTipPickupdZ()
+        
         Z_start = self.getPosition(axis='Z')
         Z_calibrated = self.tips_rack.getZ()
         Z_wrong_hit_abs = Z_calibrated - wrong_hit_threshold
@@ -488,7 +491,7 @@ class robot(data):
         return False
     
     
-    def pickUpTip(self, column, row, fine_approach_dz=12.5, raise_z=0, raise_dz_with_tip=60, dx=0, dy=0):
+    def pickUpTip(self, column, row, raise_z=0, dx=0, dy=0):
         # Getting a relative height to which it is safe to approach the tips (without hitting them)
         fine_approach_dz = self.tips_rack.getFineApproachdZ()
         # Moving towards the tip
@@ -506,6 +509,7 @@ class robot(data):
             self.lookForTip()
         x, y, z, a = self.getPosition()
         # Moving up with the tip
+        raise_dz_with_tip = self.tips_rack.getRaiseWithTipdZ()
         self.moveAxisDelta('Z', -raise_dz_with_tip)
         self.tip_attached = 1
         # Letting the rack know that the tip was picked from there
@@ -1614,13 +1618,20 @@ class robot(data):
         self.writeAndWaitCartesian('M17')
         self.writeAndWaitCartesian('M400')
     
-    def powerStepperOff(self, axis):
+    def powerStepperOff(self, axis=None):
         """
         Powers off the selected axis motor
         Most useful for turning off the pipettor motor, as it tend to overheat.
         """
-        axis = axis.upper()
-        self.writeAndWaitCartesian('M18 '+axis+'0')
+        if axis is None:
+            self.writeAndWaitCartesian('M18 X0')
+            self.writeAndWaitCartesian('M18 Y0')
+            self.writeAndWaitCartesian('M18 Z0')
+            self.writeAndWaitCartesian('M18 Z1')
+            self.writeAndWaitCartesian('M18 A0')
+        else:
+            axis = axis.upper()
+            self.writeAndWaitCartesian('M18 '+axis+'0')
         self.writeAndWaitCartesian('M400')
 
     def getPosition(self, axis=None):
@@ -2330,3 +2341,43 @@ class consumable(rack):
         not calibrated correctly.
         """
         return self._getSetting('fine_approach_dz')
+    
+    def setProperPickupdZ(self, proper_pickup_dz):
+        """
+        If robot get to this height relative to the calibrated rack height without triggering the 
+        load cells, that means the tip pickup is going as intended.
+        """
+        self._setSetting('proper_pickup_dz', proper_pickup_dz)
+
+
+    def getProperPickupdZ(self):
+        """
+        Returns z coordinate relative to the calibrated rack z. 
+        If robot get to this height relative to the calibrated rack height without triggering the 
+        load cells, that means the tip pickup is going as intended.
+        """
+        return self._getSetting('proper_pickup_dz')
+    
+    def setTipPickupdZ(self, tip_pickup_dz):
+        """
+        At this z coordinate relative to the calibrated rack z, start pressing on the tip to pick it up.
+        The tip is already loosely touching the pipette. Just 1 mm or so to move down to pick it up.
+        """
+        self._setSetting('tip_pickup_dz', tip_pickup_dz)
+        
+    def getTipPickupdZ(self):
+        """
+        Returns a z coordinate relative to the calibrated rack z.
+        At this z coordinate relative to the calibrated rack z, start pressing on the tip to pick it up.
+        The tip is already loosely touching the pipette. Just 1 mm or so to move down to pick it up.
+        """
+        return self._getSetting('tip_pickup_dz')
+    
+    
+    def setRaiseWithTipdZ(self, raise_with_tip_dz):
+        self._setSetting('raise_with_tip_dz', raise_with_tip_dz)
+        
+    def getRaiseWithTipdZ(self):
+        return self._getSetting('raise_with_tip_dz')
+        
+    

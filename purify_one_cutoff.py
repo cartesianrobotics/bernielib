@@ -124,6 +124,37 @@ def returnProtocolParameter(settings, param):
     return returnSampleParameter(settings, param, '0')
 
 
+# Protocol-wide settings
+# ===========================================================================================
+
+def returnTipRackType(settings):
+    """
+    Returns the tip rack type. Used to properly initialize the robot.
+    """
+    return returnProtocolParameter(settings, 'Tip Rack Type')
+    
+def returnLoadCellPort(settings):
+    """
+    Returns the port name for the load cell controller (Arduino metro mini)
+    """
+    value = returnProtocolParameter(settings, 'Load cells controller port')
+    if value == 'auto':
+        return None
+    else:
+        return value
+
+def returnCartesianPort(settings):
+    """
+    Returns the port name for the cartesian controller (smoothieboard)
+    """
+    value = returnProtocolParameter(settings, 'Cartesian controller port')
+    if value == 'auto':
+        return None
+    else:
+        return value
+
+def decideCutoffNumber(settings):
+    return returnProtocolParameter(settings, 'Number of cutoffs')
 
 # Functions samples and tubes initialization
 # ===========================================================================================
@@ -976,11 +1007,28 @@ if __name__ == '__main__':
     # Initializing  the robot and homing it.
     # TODO: load port names from the settings file
     
+    # How many stages (cutoffs) to perform:
+    stages = decideCutoffNumber(settings)
+    
+    # Tip rack type:
+    tip_rack_type = returnTipRackType(settings)
+    
+    # Ports
+    load_cell_port = returnLoadCellPort(settings)
+    cartesian_port = returnCartesianPort(settings)
+    
     # Initializing the robot
-    ber = bl.robot()
+    ber = bl.robot(cartesian_port_name=cartesian_port, loadcell_port_name=load_cell_port, tips_type=tip_rack_type)
     ber.home()
     
-    purify_one_cutoff(ber, settings)
+    if stages == 1:
+        purify_one_cutoff(ber, settings)
+    elif stages == 2:
+        purifyTwoCutoffs(ber, settings)
+    else:
+        print("Can't find the number of cutoffs.")
+        print("Specify 'Number of cutoffs' parameter in the sample sheet file.")
+        print("Set '1' if you want only to remove short DNA, set '2' if you want to remove both too short and too long DNA.")
 
     ber.powerStepperOff('A') # to prevent unnecessary heating. Must be off already, but just in case.
     ber.powerStepperOff()    # Powering off all steppers
