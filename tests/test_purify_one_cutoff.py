@@ -2,7 +2,7 @@ import unittest
 import os
 import mock
 
-import purify_one_cutoff as ponec
+import purify as ponec
 import bernielib as bl
 
 
