@@ -41,6 +41,7 @@ class data():
     
     def __init__(self, name):
         self.name = name
+        self.factory_default_path = './factory_default/' + self.name + '.json'
         self.loadData()
     
     
@@ -48,10 +49,18 @@ class data():
         try:
             value = self.data[name]
         except:
-            print ("Error: setting ", name, " is not specified.")
-            print ("Use _setSetting('setting_name', value) to specify it.")
-            print ("Alternatively, do self.data['setting_name']=value to set it temporary.")
-            return
+            try:
+                # If a setting was not find in the local settings, trying to 
+                # get them from the factory default
+                factory_default_data = self.loadFactoryDefault()
+                value = factory_default_data[name]
+                # Addting the missing setting to the local settings
+                self._setSetting(name, value)
+            except:
+                print ("Error: setting ", name, " is not specified.")
+                print ("Use _setSetting('setting_name', value) to specify it.")
+                print ("Alternatively, do self.data['setting_name']=value to set it temporary.")
+                return
         return value
         
     def _settingPresent(self, name):
@@ -82,8 +91,21 @@ class data():
             self.data = json.loads(f.read())
             f.close()
         except FileNotFoundError:
-            self.data = {}
-            
+            self.data = self.loadFactoryDefault()
+            # Copying factory defaults into the local settings
+            self.save()
+    
+    
+    def loadFactoryDefault(self):
+        try:
+            f = open(self.factory_default_path, 'r')
+            factory_default_data = json.loads(f.read())
+            f.close()
+        except FileNotFoundError:
+            factory_default_data = {}
+        return factory_default_data
+    
+    
     def purge(self):
         """
         Attention! Do not run unless you know what you are doing.
