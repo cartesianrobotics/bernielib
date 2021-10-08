@@ -113,8 +113,6 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         self.assertTrue(self.ber.transferLiquid.called)
         
-        print(self.ber.transferLiquid.mock_calls[0])
-        
         call = self.ber.transferLiquid.mock_calls[0]
         expected = mock.call(source=sample, destination=intermediate, 
                              volume=sample.getVolume(), dry_tube=True, safe_z=50, delay=0.5,

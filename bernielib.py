@@ -2,6 +2,7 @@ import serial
 import time
 import re
 import logging
+import threading
 
 # libraries for curve fitting. Used for pipette calibration and for beads volumes.
 import pandas as pd
@@ -34,12 +35,19 @@ Sergii Pochekailov
 # Those are parameters for serial connection. 
 # Used when opening serial port.
 BAUDRATE = 115200
-TIMEOUT = 0.1   # seconds
+TIMEOUT = 5   # seconds
 END_OF_LINE = "\r"
 
 # Welcome messages
 LOADCELL_WELCOME = "Bernie's load cells controller"
+LOADCELL_WELCOME_ALT1 = "Arnie's mobile gripper tool"
 SMOOTHIE_STATUS_REPLY = "Build version: "
+
+expected_response_dict = {
+    'loadcell': LOADCELL_WELCOME,
+    'loadcell_alt1': LOADCELL_WELCOME_ALT1,
+    'cartesian': SMOOTHIE_STATUS_REPLY,
+}
 
 class robot(data):
     """
@@ -65,6 +73,22 @@ class robot(data):
             self.tips_rack = consumable('tips')
         self.reagents_rack = rack('reagents')
         
+        # Attempting to close the ports that might be still open from the
+        # previous improper object termination.
+        try:
+            self.close()
+        except:
+            pass
+            
+        if (cartesian_port_name is None) or (loadcell_port_name is None):
+            robot_port_map = self._mapPortsWithRetries()
+        else:
+            robot_port_map = {
+                'loadcell': loadcell_port_name,
+                'cartesian': cartesian_port_name,
+            }
+        
+        """
         if (cartesian_port_name is None) or (loadcell_port_name is None):
             # If at least one of the port names are not provided, 
             # the library tries to assign it automatically.
@@ -89,6 +113,10 @@ class robot(data):
             # FIRMWARE TODO: write module for smoothieware that communicates with load cells.
             # ELECTRONICS TODO: Remove load cell arduino and USB hub; shrink the electronics box
             self.loadcell_port = serial.Serial(loadcell_port_name, BAUDRATE, timeout=TIMEOUT)
+        """
+        
+        self.cartesian_port = serial.Serial(robot_port_map['cartesian'], BAUDRATE, timeout=TIMEOUT)
+        self.loadcell_port = serial.Serial(robot_port_map['loadcell'], BAUDRATE, timeout=TIMEOUT)
         
         # Waiting for ports to open
         time.sleep(1)
@@ -114,34 +142,164 @@ class robot(data):
         except:
             pass
     
+    """
+    def _initSerialDevice(self, port_name):
+        
+        # In case the port didn't get closed from the last time
+        try:
+            unknown_port.close()
+        except:
+            pass
+        
+        unknown_port = serial.Serial(port_name, BAUDRATE, timeout=TIMEOUT)
+        unknown_port.flushInput() # Cleaning anything that may be in the buffer.
+        port_controller = self._assignPort(unknown_port, SMOOTHIE_STATUS_REPLY, LOADCELL_WELCOME)
+        if port_controller == 'loadcell':
+            self.loadcell_port = unknown_port.copy()
+        elif port_controller == 'cartesian':
+            self.cartesian_port = unknown_port.copy()
+        else:
+            print ("Port is undefined")
+        unknown_port.close()
+        try:
+            self.loadcell_port.flushInput()
+        except AttributeError:
+            try:
+                self.loadcell_port.close()
+            except:
+                pass
+            self._initSerialDevice(port_name) # Recursively calling itself to try again
+        try:
+            self.cartesian_port.flushInput()
+    """
+    
+    def _getRobotIdMessage(self, port_name, port_dict):
+        """Obtain messages that help identify the robot"""
+        # Temporary opeining the port
+        port = serial.Serial(port_name, 115200, timeout=5)
+        
+        port.reset_output_buffer()
+        port.reset_input_buffer()
+        port.flushInput()
+    
+        message = self._writeAndWait(port=port, expression='version', eol='\n', confirm_message='\r\n')
+        
+        port.close()
+        
+        port_dict[port_name] = message
+        return port_dict
+
+    def _portCheck(self, port_name, ports_list):
+        try:
+            port = serial.Serial(port_name, 115200, timeout=5)
+            port.close()
+            ports_list.append(port_name)
+        except (OSError, serial.SerialException):
+            pass       
+        
+    def _mapPorts(self):
+        # Listing ports
+        ports_list = [] # Ports that opens
+        ports = ['COM%s' % (i + 1) for i in range(256)] # All possible port names
+        for port_name in ports:
+            x = threading.Thread(target=self._portCheck, args=(port_name, ports_list,))
+            x.start()
+            x.join()        
+        
+        # Obtaining port id message from each port
+        port_id_msg_dict = {}
+        for port_name in ports_list:
+            x = threading.Thread(target=self._getRobotIdMessage, args=(port_name, port_id_msg_dict,))
+            x.start()
+            x.join()
+        
+        # Creating a dictionary consisting of the robot device and port name
+        robot_ports_dict = self.portRecognizer(port_id_msg_dict, expected_response_dict)
+        return robot_ports_dict
+        
+    
+    def _mapPortsWithRetries(self, retry_number=5):
+        for i in range(retry_number):
+            ports_dict = self._mapPorts()
+            if ('loadcell' in ports_dict) and ('cartesian' in ports_dict):
+                logging.info("Both loadcell and cartesian ports seemed to be properly opened.")
+                break
+            logging.warning("Failed to open a serial port; but don't worry, I am trying again. Please wait.")
+        if (not ('loadcell' in ports_dict)) or (not ('cartesian' in ports_dict)):
+            logging.error("Program failed to find all necessary serial ports for the robot")
+            logging.error("Needed two ports; for loadcell Arduino and for cartesian smoothieboard.")
+            logging.error("Check if the robot's USB port is connected to the computer.")
+            logging.error("This is the list of the ports found: ")
+            logging.error(str(ports_dict))
+            return
+        return ports_dict
+        
+                    
+                    
+
+    def portRecognizer(self, port_message_dict, expected_response_dict):
+        robot_ports_dict = {}
+        for port_name, return_message in port_message_dict.items():
+            if re.search(pattern=expected_response_dict['cartesian'], string=return_message):
+                robot_ports_dict['cartesian'] = port_name
+            elif re.search(pattern=expected_response_dict['loadcell'], string=return_message):
+                robot_ports_dict['loadcell'] = port_name
+            elif re.search(pattern=expected_response_dict['loadcell_alt1'], string=return_message):
+                robot_ports_dict['loadcell'] = port_name
+            else:
+                pass
+        return robot_ports_dict
     
     
-    
-    def _readAll(self, port, delay=0.001):
-        time.sleep(delay)
+    def _readAll(self, port, delay=1):
+        #time.sleep(delay)
+        something_read = False
         message = ''
+        #time_passed = 0
+        #before_timestamp = time.time()
+        #current_timestamp = time.time()
         while port.inWaiting():
             message += port.read(1).decode("utf-8")
-            
+            something_read = True
+            #current_timestamp = time.time()
+            #time_passed = current_timestamp - before_timestamp
+            #print("reading... Obtained message: %s" % message)
+        
+        logging.info("Message received from the robot: %s", message)
         return message
     
     
-    def _readUntilMatch(self, port, pattern):
+    def _readUntilMatch(self, port, pattern, timeout=5):
         message = ''
+        before_timestamp = time.time()
+        time_passed = 0
         while True:
             message += self._readAll(port)
+            #print("reading... Obtained message: %s" % message)
+            current_timestamp = time.time()
+            time_passed = current_timestamp - before_timestamp
             if re.search(pattern=pattern, string=message):
                 self.recent_message = message
-                break
-        return self.recent_message
+                logging.info("Confirmed full message from the robot: %s", self.recent_message)
+                return self.recent_message
+            if time_passed > timeout:
+                # Timeout triggered, return None
+                # Higher level function should repeat the request and try to read again
+                logging.warning("Timeout for _readUntilMatch function.")
+                logging.warning("Message returned from the robot: %s", message)
+                logging.warning("Waited %s seconds", time_passed)
+                return
     
     
     def _write(self, port, expression, eol):
-        port.flushInput()
+        # Cleaning the port from the previous possible communications
+        port.reset_output_buffer()
+        port.reset_input_buffer()
         expression = expression.strip()
         expression = expression + eol
         expr_enc = expression.encode()
         port.write(expr_enc)
+        logging.info("Message sent to the robot: %s", expression)
     
         
     def writeLoadCell(self, expression):
@@ -194,6 +352,7 @@ class robot(data):
         loadcell_port_name = self._getSetting('loadcell_port_name')
         return cartesian_port_name, loadcell_port_name
 
+
     def _assignPort(self, port, cartesian_expected_msg, loadcell_expected_msg, 
                     init_delay=0.05, attempts=50, baudrate=BAUDRATE, timeout=TIMEOUT):
         
@@ -204,6 +363,7 @@ class robot(data):
             elif re.search(pattern=loadcell_expected_msg, string=message):
                 return 'loadcell'
         return 'Unidentified'
+
 
     def _verifyPort(self, port_instance, expected_controller_name, expected_message, 
                     init_delay=0.05, attempts=50, baudrate=BAUDRATE, timeout=TIMEOUT):
@@ -1339,7 +1499,7 @@ class robot(data):
     
     
     def tareAll(self):
-        self.writeLoadCell('T')
+        self.writeAndWaitLoadCell('T')
     
     
     def readRightLoad(self):
@@ -1795,7 +1955,7 @@ class robot(data):
             self.moveAxisDelta(axis, step*direction)
             z_trigger = self.moveDownUntilPress(step=z_increment, 
                             threshold=z_threshold, z_max=initial_z+depth)
-            #print (z_trigger, abs(initial_z - z_trigger), z_max_travel)
+            #print (z_trigger, abs(initial_z - z_trigger), z_max_travel)           
         stair_coord = self.getPosition(axis=axis)
         return stair_coord
 

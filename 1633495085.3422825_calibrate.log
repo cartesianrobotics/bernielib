@@ -1,0 +1,168 @@
+2021-10-05 21:38:10,756 root:INFO:Running the calibration script
+2021-10-05 21:38:10,756 root:INFO:Robot homing started
+2021-10-05 21:38:10,777 root:INFO:Message sent to the robot: version
+
+2021-10-05 21:38:10,779 root:INFO:Message received from the robot: Build version: edge-0565b13, Build date: Jun 19 2021 16:12:18, MCU: LPC1769, System Clock: 120MHz
+5 axis
+
+2021-10-05 21:38:10,779 root:WARNING:Confirmed full message from the robot: Build version: edge-0565b13, Build date: Jun 19 2021 16:12:18, MCU: LPC1769, System Clock: 120MHz
+5 axis
+
+2021-10-05 21:38:10,784 root:INFO:Message sent to the robot: version
+
+2021-10-05 21:38:12,513 root:INFO:Message received from the robot: Arnie's mobile gripper tool
+Rev. 2.0, 3/21/2020
+Power servo up: P on
+Power servo down: P off
+Rotate servo to 30 degrees: G0 30
+Servo will actually operate after P on.
+Tare all load cells: T
+Tare left load cell: T L
+Tare right load cell: T R
+Get left load cell reading: RL
+Get right load cell reading: RR
+
+2021-10-05 21:38:12,513 root:WARNING:Confirmed full message from the robot: Arnie's mobile gripper tool
+Rev. 2.0, 3/21/2020
+Power servo up: P on
+Power servo down: P off
+Rotate servo to 30 degrees: G0 30
+Servo will actually operate after P on.
+Tare all load cells: T
+Tare left load cell: T L
+Tare right load cell: T R
+Get left load cell reading: RL
+Get right load cell reading: RR
+
+2021-10-05 21:38:12,514 root:INFO:Message sent to the robot: version
+
+2021-10-05 21:38:13,968 root:INFO:Message received from the robot: Bernie's load cells controller
+
+2021-10-05 21:38:13,968 root:WARNING:Confirmed full message from the robot: Bernie's load cells controller
+
+2021-10-05 21:38:14,969 root:INFO:Message sent to the robot: $H
+2021-10-05 21:38:20,124 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:20,124 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:20,124 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:20,124 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:20,124 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:20,125 root:INFO:Message sent to the robot: M106
+2021-10-05 21:38:20,125 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:20,125 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:20,125 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:20,125 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:20,125 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:20,126 root:INFO:Message sent to the robot: M280 S5.2
+2021-10-05 21:38:20,126 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:20,126 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:20,126 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:20,126 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:20,126 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,640 root:INFO:Message sent to the robot: M107
+2021-10-05 21:38:21,641 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,641 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,642 root:INFO:Message sent to the robot: M42
+2021-10-05 21:38:21,643 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,643 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,644 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:21,644 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,645 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,645 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:21,645 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,645 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,646 root:INFO:Message sent to the robot: M280.1 S2.5
+2021-10-05 21:38:21,646 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,646 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,647 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:21,647 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,647 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,856 root:INFO:Message sent to the robot: M43
+2021-10-05 21:38:21,857 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,857 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,858 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:21,858 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,859 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,860 root:INFO:Message sent to the robot: M18 A0
+2021-10-05 21:38:21,860 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,861 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,862 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:21,862 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:21,863 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:21,863 root:INFO:Robot homing finished
+2021-10-05 21:38:25,124 root:INFO:Starting the calibration
+2021-10-05 21:38:25,124 root:INFO:Message sent to the robot: G0 Z0 F10000
+2021-10-05 21:38:25,124 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:25,124 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:25,125 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:25,125 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:25,125 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:25,126 root:INFO:Message sent to the robot: G0 X8.299999999999997 Y101.19999999999999 F50000
+2021-10-05 21:38:25,147 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:25,147 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:25,148 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:25,517 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:25,517 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:25,518 root:INFO:Message sent to the robot: G0 Z150.0 F10000
+2021-10-05 21:38:25,525 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:25,525 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:25,525 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:26,484 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:26,484 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:26,485 root:INFO:Message sent to the robot: T
+2021-10-05 21:38:26,485 root:INFO:Message sent to the robot: M400
+2021-10-05 21:38:26,485 root:INFO:Message received from the robot: ok
+
+2021-10-05 21:38:26,485 root:WARNING:Confirmed full message from the robot: ok
+
+2021-10-05 21:38:26,485 root:INFO:Message sent to the robot: ?
+2021-10-05 21:38:26,489 root:INFO:Message received from the robot: ok
+<Idle|MPos:8.3000,101.2000,150.0000,0.0000|WPos:8.3000,101.2000,150.0000|F:10000.0,100.0|T:inf,0.0|B:inf,0.0>
+
+2021-10-05 21:38:26,489 root:WARNING:Confirmed full message from the robot: ok
+<Idle|MPos:8.3000,101.2000,150.0000,0.0000|WPos:8.3000,101.2000,150.0000|F:10000.0,100.0|T:inf,0.0|B:inf,0.0>
+
+2021-10-05 21:38:26,489 root:INFO:Message sent to the robot: RR

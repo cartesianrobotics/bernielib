@@ -2,10 +2,32 @@ import bernielib as bl
 import os
 import threading
 import sys
+import logging
+import time
 
 from PIL import Image
 
+
+# Setting up logging
+#log = logging.getLogger('calibrate')
+#log.setLevel(logging.INFO)
+#formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+#fh = logging.FileHandler(str(time.time())+'_calibrate.log')
+#fh.setLevel(logging.INFO)
+#fh.setFormatter(formatter)
+
+#log.addHandler(fh)
+
+logging.basicConfig(
+                    #filename='test.log',
+                    filename=(str(time.time())+'_calibrate.log'), 
+                    level=logging.INFO,
+                    format="%(asctime)s %(name)s:%(levelname)s:%(message)s",
+                    )
+
 if __name__ == '__main__':
+
     print("This is the script for calibrating Bernie's working area.")
     print("Please make sure to remove any tubes from Bernie.")
     input("Press Enter when done...")
@@ -25,14 +47,18 @@ if __name__ == '__main__':
     
     print("Starting to calibrate now.")
     print("Homing the robot. Please wait...")
+    logging.info("Running the calibration script")
+    logging.info("Robot homing started")
     ber = bl.robot()
     ber.home()
+    logging.info("Robot homing finished")
     print("The pipette should now be in the top right corner. The working area should be on the back. ")
     homing_success = input("Press y and enter if this happened: ")
     if homing_success != 'y':
         sys.exit("Homing failed according to the user. Start troubleshooting.")
     
     print("Now calibrating the samples rack. Please wait...")
+    logging.info("Starting the calibration")
     ber.calibrateRack(rack='samples')
     print("Sample rack calibration finished.")
     print("Now calibrating the reagents rack. Please wait...")

@@ -1,0 +1,38 @@
+2021-10-05 21:37:24,084 root:INFO:Running the calibration script
+2021-10-05 21:37:24,084 root:INFO:Robot homing started
+2021-10-05 21:37:24,180 root:INFO:Message sent to the robot: version
+
+2021-10-05 21:37:24,182 root:INFO:Message received from the robot: Build version: edge-0565b13, Build date: Jun 19 2021 16:12:18, MCU: LPC1769, System Clock: 120MHz
+5 axis
+
+2021-10-05 21:37:24,182 root:WARNING:Confirmed full message from the robot: Build version: edge-0565b13, Build date: Jun 19 2021 16:12:18, MCU: LPC1769, System Clock: 120MHz
+5 axis
+
+2021-10-05 21:37:24,189 root:INFO:Message sent to the robot: version
+
+2021-10-05 21:37:25,923 root:INFO:Message received from the robot: Arnie's mobile gripper tool
+Rev. 2.0, 3/21/2020
+Power servo up: P on
+Power servo down: P off
+Rotate servo to 30 degrees: G0 30
+Servo will actually operate after P on.
+Tare all load cells: T
+Tare left load cell: T L
+Tare right load cell: T R
+Get left load cell reading: RL
+Get right load cell reading: RR
+
+2021-10-05 21:37:25,923 root:WARNING:Confirmed full message from the robot: Arnie's mobile gripper tool
+Rev. 2.0, 3/21/2020
+Power servo up: P on
+Power servo down: P off
+Rotate servo to 30 degrees: G0 30
+Servo will actually operate after P on.
+Tare all load cells: T
+Tare left load cell: T L
+Tare right load cell: T R
+Get left load cell reading: RL
+Get right load cell reading: RR
+
+2021-10-05 21:37:25,924 root:INFO:Message sent to the robot: version
+
