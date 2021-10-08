@@ -14,7 +14,6 @@ from samples import sample
 from samples import createSample
 from samples import createSamplesToPurifyList
 from samples import createPurifiedSamplesList
-from general import listSerialPorts
 from general import data
 
 
@@ -88,33 +87,6 @@ class robot(data):
                 'cartesian': cartesian_port_name,
             }
         
-        """
-        if (cartesian_port_name is None) or (loadcell_port_name is None):
-            # If at least one of the port names are not provided, 
-            # the library tries to assign it automatically.
-            ports_names_list = listSerialPorts()
-            for port_name in ports_names_list:
-                unknown_port = serial.Serial(port_name, BAUDRATE, timeout=TIMEOUT)
-                unknown_port.flushInput() # Cleaning anything that may be in the buffer.
-                port_controller = self._assignPort(unknown_port, SMOOTHIE_STATUS_REPLY, LOADCELL_WELCOME)
-                if port_controller == 'loadcell':
-                    self.loadcell_port = unknown_port
-                elif port_controller == 'cartesian':
-                    self.cartesian_port = unknown_port
-                else:
-                    print ("Port is undefined")
-        else:
-            # If both port names are provided, just opening the port.
-            # It is a user discretion to provide them correctly.
-            # Opening communications
-            self.cartesian_port = serial.Serial(cartesian_port_name, BAUDRATE, timeout=TIMEOUT)
-            # Opening port for arduino board that manages load cells.
-            # At the moment, I do not have smoothieware able to communicate with the load cells. 
-            # FIRMWARE TODO: write module for smoothieware that communicates with load cells.
-            # ELECTRONICS TODO: Remove load cell arduino and USB hub; shrink the electronics box
-            self.loadcell_port = serial.Serial(loadcell_port_name, BAUDRATE, timeout=TIMEOUT)
-        """
-        
         self.cartesian_port = serial.Serial(robot_port_map['cartesian'], BAUDRATE, timeout=TIMEOUT)
         self.loadcell_port = serial.Serial(robot_port_map['loadcell'], BAUDRATE, timeout=TIMEOUT)
         
@@ -142,36 +114,6 @@ class robot(data):
         except:
             pass
     
-    """
-    def _initSerialDevice(self, port_name):
-        
-        # In case the port didn't get closed from the last time
-        try:
-            unknown_port.close()
-        except:
-            pass
-        
-        unknown_port = serial.Serial(port_name, BAUDRATE, timeout=TIMEOUT)
-        unknown_port.flushInput() # Cleaning anything that may be in the buffer.
-        port_controller = self._assignPort(unknown_port, SMOOTHIE_STATUS_REPLY, LOADCELL_WELCOME)
-        if port_controller == 'loadcell':
-            self.loadcell_port = unknown_port.copy()
-        elif port_controller == 'cartesian':
-            self.cartesian_port = unknown_port.copy()
-        else:
-            print ("Port is undefined")
-        unknown_port.close()
-        try:
-            self.loadcell_port.flushInput()
-        except AttributeError:
-            try:
-                self.loadcell_port.close()
-            except:
-                pass
-            self._initSerialDevice(port_name) # Recursively calling itself to try again
-        try:
-            self.cartesian_port.flushInput()
-    """
     
     def _getRobotIdMessage(self, port_name, port_dict):
         """Obtain messages that help identify the robot"""
@@ -234,8 +176,6 @@ class robot(data):
             return
         return ports_dict
         
-                    
-                    
 
     def portRecognizer(self, port_message_dict, expected_response_dict):
         robot_ports_dict = {}
@@ -335,113 +275,6 @@ class robot(data):
             return
         return r
 
-    def _setPortNames(self, cartesian_port_name, loadcell_port_name):
-        """
-        Saves the port names (such as COM2, COM3 etc) to the robot's settings file.
-        """
-        self._setSetting('cartesian_port_name', cartesian_port_name)
-        self._setSetting('loadcell_port_name', loadcell_port_name)
-    
-    def _getPortNames(self):
-        """
-        Returns port names for the robot boards.
-        First value is for the cartesian robot controller (smoothieboard), 
-        second value is for the load cell (arduino).
-        """
-        cartesian_port_name = self._getSetting('cartesian_port_name')
-        loadcell_port_name = self._getSetting('loadcell_port_name')
-        return cartesian_port_name, loadcell_port_name
-
-
-    def _assignPort(self, port, cartesian_expected_msg, loadcell_expected_msg, 
-                    init_delay=0.05, attempts=50, baudrate=BAUDRATE, timeout=TIMEOUT):
-        
-        for attempt in range(attempts):
-            message = self._writeAndWait(port=port, expression='version', eol='\n', confirm_message='\n')
-            if re.search(pattern=cartesian_expected_msg, string=message):
-                return 'cartesian'
-            elif re.search(pattern=loadcell_expected_msg, string=message):
-                return 'loadcell'
-        return 'Unidentified'
-
-
-    def _verifyPort(self, port_instance, expected_controller_name, expected_message, 
-                    init_delay=0.05, attempts=50, baudrate=BAUDRATE, timeout=TIMEOUT):
-        """
-        Sends a request to the controller and waits for it to return a reply.
-        Then, verifies the reply against the desired messages.
-        """
-        for attempt in range(attempts):
-            # Sending "version" request
-            message = self._writeAndWait(port=port_instance, expression='version', eol='\n', confirm_message='\n')
-            if re.search(pattern=expected_message, string=message):
-                # Found a match, stopping cycle and returning True
-                return True
-        # If a program reached here, that means no matches were found during all the attempts.
-        return False
-
-        
-    def _verifyLoadCellPort(self, loadcell_port_name, init_delay=0.05, attempts=100, baudrate=BAUDRATE, timeout=TIMEOUT):
-        """
-        Opens a port and waits for the greeting message from Arduino. If greeting message is 
-        correct, returns True, otherwise False. Closes the port afterwards.
-        """
-        
-        # Temporary closing the loadcell port
-        # To be removed
-        try:
-            self.loadcell_port.close()
-            time.sleep(init_delay*20)
-        except:
-            pass
-        
-        # Opening the port
-        port = serial.Serial(loadcell_port_name, baudrate=baudrate, timeout=timeout)
-        # Giving the port a few moments to open. Otherwise it may fail.
-        #time.sleep(init_delay*20)
-        
-        for attempt in range(attempts):
-            # Recording the welcome message
-            message = self._readAll(port, delay=init_delay)
-            # Comparing the welcome message to the load cell controller
-            expected_message = LOADCELL_WELCOME
-            if re.search(pattern=expected_message, string=message):
-                # Found a match, stopping cycle and returning True
-                # Closing the port
-                port.close()
-                return True
-        # If a program reached here, that means no matches were found during all the attempts.
-        port.close()
-        return False
-        
-    
-    def _verifyCartesianPort(self, cartesian_port_name, attempts=10, baudrate=BAUDRATE, timeout=TIMEOUT):
-        """
-        Opens a port and sends a "version" command for smoothieboard. Waits for the reply.
-        Will repeat specified number of attempts.
-        If the request matches the expected, returns True, otherwise False.
-        """
-        try:
-            self.cartesian_port.close()
-        except:
-            pass        
-            
-        # Opening the port
-        port = serial.Serial(cartesian_port_name, baudrate=baudrate, timeout=timeout)
-        
-        for attempt in range(attempts):
-            # Sending "version" request
-            message = self._writeAndWait(port=port, expression='version', eol='\n', confirm_message='\n')
-            expected_message = SMOOTHIE_STATUS_REPLY
-            if re.search(pattern=expected_message, string=message):
-                # Found a match, stopping cycle and returning True
-                # Closing the port
-                port.close()
-                return True
-        # If a program reached here, that means no matches were found during all the attempts.
-        port.close()
-        return False
-        
     
 # ==========================================================================================
 # Pipette functions
