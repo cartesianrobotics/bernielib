@@ -1,6 +1,7 @@
 import unittest
 import mock
 import time
+import logging
 
 import bernielib as bl
 
@@ -8,8 +9,11 @@ import bernielib as bl
 class bernielib_test_case(unittest.TestCase):
     
     def setUp(self):
+        
         self.tearDown()
-    
+        
+        logging.disable(logging.CRITICAL)
+        
         bl.time.sleep = mock.MagicMock()
         bl.serial.Serial = mock.MagicMock()
         self.ber = bl.robot(cartesian_port_name='COM18', loadcell_port_name='COM7')
@@ -20,9 +24,10 @@ class bernielib_test_case(unittest.TestCase):
         self.ber.getCombinedLoad = mock.MagicMock()
         self.ber.getCombinedLoad.side_effect = [0, 0, 0, 1000, 2000, 3000, 4000]
         self.ber.moveAxis = mock.MagicMock()
+        self.ber.tareAll = mock.MagicMock()
         
         self.ber.moveDownUntilPress(1, 500)
-        
+
         times_called = self.ber.moveAxis.call_count
         
         self.assertEqual(times_called, 3)
@@ -48,7 +53,7 @@ class bernielib_test_case(unittest.TestCase):
         
         times_called = self.ber.moveAxis.call_count
         self.assertEqual(times_called, 0)
-        
+
         
     """        
     def test_scanForStair(self):
@@ -127,6 +132,7 @@ class bernielib_test_case(unittest.TestCase):
             del self.ber
         except:
             pass
+        logging.disable(logging.NOTSET)
 
 
 if __name__ == '__main__':

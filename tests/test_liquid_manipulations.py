@@ -15,6 +15,7 @@ class bernielib_test_case(unittest.TestCase):
         ber.getCombinedLoad = mock.MagicMock()
         ber.getCombinedLoad.side_effect = [0, 0, 0, 1000, 2000, 3000, 4000]
         ber.moveAxis = mock.MagicMock()
+        ber.tareAll = mock.MagicMock()
         
         ber.moveDownUntilPress(1, 500)
         
@@ -42,7 +43,6 @@ class bernielib_test_case(unittest.TestCase):
         
         times_called = ber.moveAxis.call_count
         self.assertEqual(times_called, 0)
-        
 
 
         

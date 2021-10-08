@@ -15,6 +15,7 @@ from samples import createSample
 from samples import createSamplesToPurifyList
 from samples import createPurifiedSamplesList
 from general import data
+from general import listSerialPorts
 
 
 # TODO: Figure out how to make smoothieware send a signal for physically finishing the job
