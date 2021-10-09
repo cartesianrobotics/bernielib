@@ -13,6 +13,24 @@ class one_step_cutoff_test_case(unittest.TestCase):
         bl.serial.Serial = mock.MagicMock()
         self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         
+        try:
+            self.settings_curr_1stage = ponec.loadSettings('samplesheet.csv')
+        except:
+            print("No one-stage settings file")
+        try:
+            self.settings_factdef_1stage = ponec.loadSettings(
+                                        '.\\factory_default\\samplesheet.csv')
+        except:
+            print("No factory default one-stage settings file")
+        try:
+            self.settings_curr_2stages = ponec.loadSettings('samplesheet_2stages.csv')
+        except:
+            print("No two-stages settings file")
+        try:
+            self.settings_factdef_2stages = ponec.loadSettings(
+                                        '.\\factory_default\\samplesheet_2stages.csv')
+        except:
+            print("No factory default two-stages settings file")
 
 
     def test_getBeadsVolume(self):
@@ -215,6 +233,50 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         
         #ber.close()
+    
+    def test_returnTipRackType(self):
+        self.setting_test_factory_default('old', ponec.returnTipRackType)
+    
+    def test_returnLoadCellPort(self):
+        self.setting_test_factory_default(None, ponec.returnLoadCellPort)
+    
+    def test_returnCartesianPort(self):
+        self.setting_test_factory_default(None, ponec.returnCartesianPort)
+    
+    def test_decideCutoffNumber(self):
+        self.setting_test_universal_function(1, ponec.decideCutoffNumber, 
+                                        self.settings_factdef_1stage)
+        self.setting_test_universal_function(2, ponec.decideCutoffNumber, 
+                                        self.settings_factdef_2stages)
+    
+    def test_returnPipettingDelay(self):
+        self.setting_test_factory_default(1, ponec.returnPipettingDelay)
+        
+    def test_returnMaxPipetteSpeed(self):
+        self.setting_test_factory_default(2500, ponec.returnMaxPipetteSpeed)
+
+    def test_returnBeadsPipettingSpeed(self):
+        self.setting_test_factory_default(1500, ponec.returnBeadsPipettingSpeed)
+
+    def test_returnEthanolPipettingSpeed(self):
+        self.setting_test_factory_default(2000, ponec.returnEthanolPipettingSpeed)
+        
+    def test_returnEluentPipettingSpeed(self):
+        self.setting_test_factory_default(1800, ponec.returnEluentPipettingSpeed)
+
+    def setting_test_factory_default(self, expected_param, param_return_func):
+        self.setting_test_universal_function(expected_param, param_return_func, 
+                                             self.settings_factdef_1stage)
+        self.setting_test_universal_function(expected_param, param_return_func, 
+                                             self.settings_factdef_2stages)
+        
+        
+    def setting_test_universal_function(self, expected_parameter, 
+                                        parameter_returning_function, *args):
+        parameter = parameter_returning_function(*args)
+        self.assertEqual(parameter, expected_parameter)
+        
+    
     
     def tearDown(self):
         try:

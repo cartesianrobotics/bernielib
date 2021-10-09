@@ -666,9 +666,9 @@ class robot(data):
         return volume
     
 
-    def movePipetteToVolume(self, volume):
+    def movePipetteToVolume(self, volume, speed):
         plunger_position = self.calcPipettePositionFromVolume(volume)
-        self.pipetteMove(plunger_position)
+        self.pipetteMove(plunger_position, speed=speed)
         
         
     def setPipetteDelay(self, delay):
@@ -1490,7 +1490,6 @@ class robot(data):
     def getSpeedPipette(self):
         return self._getSetting('speed_pipette')
     
-    # TODO: Make speed a loadable parameter
     def getSpeed(self, axis):
         axis = axis.upper()
         if axis == 'X' or axis == 'Y':

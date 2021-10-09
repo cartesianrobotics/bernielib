@@ -156,6 +156,23 @@ def returnCartesianPort(settings):
 def decideCutoffNumber(settings):
     return returnProtocolParameter(settings, 'Number of cutoffs')
 
+
+def returnPipettingDelay(settings):
+    return returnProtocolParameter(settings, 'Delay after pipetting')
+
+def returnMaxPipetteSpeed(settings):
+    return returnProtocolParameter(settings, 'Maximum pipetting speed')
+    
+def returnBeadsPipettingSpeed(settings):
+    return returnProtocolParameter(settings, 'Beads pipetting speed')
+    
+def returnEthanolPipettingSpeed(settings):
+    return returnProtocolParameter(settings, 'Ethanol pipetting speed')
+    
+def returnEluentPipettingSpeed(settings):
+    return returnProtocolParameter(settings, 'Eluent pipetting speed')
+
+
 # Functions samples and tubes initialization
 # ===========================================================================================
 
@@ -732,6 +749,11 @@ def purify_one_cutoff(robot, settings):
     v_ethanol_2nd_stage_list = getWashVolume(settings, 2)
     v_eluent_list = getEluentVolume(settings)
     
+    max_pipette_speed = returnMaxPipetteSpeed(settings)
+    beads_pipetting_speed = returnBeadsPipettingSpeed(settings)
+    ethanol_pipetting_speed = returnEthanolPipettingSpeed(settings)
+    eluent_pipetting_speed = returnEluentPipettingSpeed(settings)
+    
     T_pull = returnProtocolParameter(settings, 'Beads pulling time after absorption') * 60.0
     T_wash_1 = returnProtocolParameter(settings, 'First stage ethanol wash time') * 60.0
     T_wash_2 = returnProtocolParameter(settings, 'Second stage ethanol wash time') * 60.0
@@ -751,7 +773,11 @@ def purify_one_cutoff(robot, settings):
     
     # Starting the physical protocol
     print("Adding magnetic beads. Started ", datetime.now().strftime("%H:%M:%S"))
+    
+    # Setting the pipette speed for pipetting more viscous beads.
+    robot.setSpeedPipette(beads_pipetting_speed) 
     timestamp_beads_added = addBeadsToAll(robot, samples_list, v_beads_list, beads)
+    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
     print("Beads added ", datetime.now().strftime("%H:%M:%S"))
     print("Now waiting for DNA absorption.")
     
@@ -769,12 +795,17 @@ def purify_one_cutoff(robot, settings):
     # Removing supernatant (the desired DNA of larger molecular weight is on the beads)
     print("Beads are now on the side of the tube.")
     print("Removing supernatant. Started ", datetime.now().strftime("%H:%M:%S"))
+    # Setting the pipette speed for the viscous beads supernatant
+    robot.setSpeedPipette(beads_pipetting_speed)
     ts = removeSupernatantAllSamples(robot, samples_list, waste, fast=True)
+    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
     print("Supernatant removed from all tubes at ", datetime.now().strftime("%H:%M:%S"))
     
     # 1st stage ethanol wash
     print("Now starting ethanol washes.")
     print("Adding 80% ethanol. Started ", datetime.now().strftime("%H:%M:%S"))
+    # Setting the pipette speed for the less viscous ethanol solution
+    robot.setSpeedPipette(ethanol_pipetting_speed)
     timestamp_ethanol_added = add80PctEthanol(robot, samples_list, EtOH80pct, v_ethanol_1st_stage_list)
     print("Wash 1: ethanol added ", datetime.now().strftime("%H:%M:%S"))
     waitAfterTimestamp(timestamp_ethanol_added, T_wash_1)
@@ -789,6 +820,7 @@ def purify_one_cutoff(robot, settings):
     print("Wash 2: ethanol incubation finished ", datetime.now().strftime("%H:%M:%S"))
     timestamp_ethanol_removed = removeSupernatantAllSamples(robot, samples_list, waste)
     print("Wash 2: ethanol removed ", datetime.now().strftime("%H:%M:%S"))
+    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
     
     # Drying ethanol
     print("Now drying the tubes from the remaining ethanol.")
@@ -800,6 +832,8 @@ def purify_one_cutoff(robot, settings):
     # Elution
     # Adding eluent
     print("Starting elution. Started ", datetime.now().strftime("%H:%M:%S"))
+    # Setting the pipette speed for the eluent solution (usually water)
+    robot.setSpeedPipette(eluent_pipetting_speed)
     elution_start_timestamp = eluteAllSamples(robot, samples_list, water, v_eluent_list, settings)
     print("Eluent added ", datetime.now().strftime("%H:%M:%S"))
     print("Now mixing the samples. Started at ", datetime.now().strftime("%H:%M:%S"))
@@ -819,6 +853,7 @@ def purify_one_cutoff(robot, settings):
     separateEluateAllTubes(robot, samples_list, result_list)
     print("Eluate transferred to the new tube ", datetime.now().strftime("%H:%M:%S"))
     print("Purification finished ", datetime.now().strftime("%H:%M:%S"))
+    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
     
 
 def purifyTwoCutoffs(robot, settings):
