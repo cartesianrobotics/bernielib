@@ -4,11 +4,15 @@ import os
 
 import bernielib as bl
 
+from mock import patch
+
 class bernielib_test_case(unittest.TestCase):
     
-    def setUp(self):
-        bl.time.sleep = mock.MagicMock()
-        bl.serial.Serial = mock.MagicMock()
+    @patch('purify.bl.time.sleep')
+    @patch('purify.bl.serial.Serial')
+    def setUp(self, mock_serial, mock_sleep):
+        #bl.time.sleep = mock.MagicMock()
+        #bl.serial.Serial = mock.MagicMock()
         self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         self.s1 = bl.createSample('eppendorf', 's1', self.ber.samples_rack, 1, 0, 0)
         self.beads_5ml = bl.createSample('5mL', 'beads_5ml', self.ber.samples_rack, 1, 0, 0)

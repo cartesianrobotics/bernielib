@@ -3,11 +3,15 @@ import mock
 
 import bernielib as bl
 
+from mock import patch
+
 class bernielib_test_case(unittest.TestCase):
 
-    def test_moveDownUntilPress(self):
-        bl.time.sleep = mock.MagicMock()
-        bl.serial.Serial = mock.MagicMock()
+    @patch('purify.bl.time.sleep')
+    @patch('purify.bl.serial.Serial')    
+    def test_moveDownUntilPress(self, mock_serial, mock_sleep):
+        #bl.time.sleep = mock.MagicMock()
+        #bl.serial.Serial = mock.MagicMock()
         ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         
         ber.getPosition = mock.MagicMock()

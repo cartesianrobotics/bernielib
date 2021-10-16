@@ -1,22 +1,32 @@
 import unittest
 import mock
+
 import time
 import logging
 
 import bernielib as bl
 
 
+from mock import patch
+
 class bernielib_test_case(unittest.TestCase):
     
-    def setUp(self):
+    @patch('bernielib.time.sleep')
+    @patch('bernielib.serial.Serial')
+    def setUp(self, mock_serial, mock_sleep):
         
         self.tearDown()
         
         logging.disable(logging.CRITICAL)
         
-        bl.time.sleep = mock.MagicMock()
-        bl.serial.Serial = mock.MagicMock()
+        #bl.time.sleep = mock.MagicMock()
+        #self.serial_patcher = patch('bernielib.serial.Serial')
+        #bl.serial.Serial = self.serial_patcher.start()
+        #self.addCleanup(self.serial_patcher.stop)
+        
+        #bl.serial.Serial = mock.MagicMock()
         self.ber = bl.robot(cartesian_port_name='COM18', loadcell_port_name='COM7')
+    
     
     def test_moveDownUntilPress(self):
         self.ber.getPosition = mock.MagicMock()
@@ -124,6 +134,8 @@ class bernielib_test_case(unittest.TestCase):
 
 
     def tearDown(self):
+        
+        #self.serial_patcher.stop()
         try:
             self.ber.close()
         except:
@@ -133,6 +145,7 @@ class bernielib_test_case(unittest.TestCase):
         except:
             pass
         logging.disable(logging.NOTSET)
+        
 
 
 if __name__ == '__main__':

@@ -1,16 +1,21 @@
 import unittest
 import os
 import mock
+import logging
 
 import purify as ponec
 import bernielib as bl
 
+from mock import patch
+
 
 class one_step_cutoff_test_case(unittest.TestCase):
 
-    def setUp(self):
-        bl.time.sleep = mock.MagicMock()
-        bl.serial.Serial = mock.MagicMock()
+    @patch('purify.bl.time.sleep')
+    @patch('purify.bl.serial.Serial')
+    def setUp(self, mock_serial, mock_sleep):
+    
+        logging.disable(logging.CRITICAL)
         self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         
         try:
@@ -114,9 +119,10 @@ class one_step_cutoff_test_case(unittest.TestCase):
         v = ponec.getBeadsVolume2ndStage(self.ber, settings_beads_vol, 2)
         self.assertEqual(v, v_2nd_stage_2)
 
-
-    def test_transferSampleToSecondStage(self):
-        self.ber.transferLiquid = mock.MagicMock()
+    @patch('purify.bl.robot.transferLiquid')
+    def test_transferSampleToSecondStage(self, mock_transferLiquid):
+        self.ber.transferLiquid = mock_transferLiquid
+        #self.ber.transferLiquid = mock.MagicMock()
         self.ber.move = mock.MagicMock()
         self.ber.pickUpNextTip = mock.MagicMock()
         self.ber.dumpTipToWaste = mock.MagicMock()
@@ -129,7 +135,8 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         ponec.transferSampleToSecondStage(self.ber, sample, intermediate)
         
-        self.assertTrue(self.ber.transferLiquid.called)
+        self.assertTrue(mock_transferLiquid.called)
+        #self.assertTrue(self.ber.transferLiquid.called)
         
         call = self.ber.transferLiquid.mock_calls[0]
         expected = mock.call(source=sample, destination=intermediate, 
@@ -137,7 +144,112 @@ class one_step_cutoff_test_case(unittest.TestCase):
                              source_tube_radius=2.0)
         
         self.assertEqual(call, expected)
+
+    @patch('purify.separateEluateAllTubes')
+    @patch('purify.eluteAllSamples')
+    @patch('purify.waitAfterTimestamp')
+    @patch('purify.add80PctEthanol')
+    @patch('purify.removeSupernatantAllSamples')
+    @patch('purify.bl.robot.moveMagnetsTowardsTube')
+    @patch('purify.mixManySamples')
+    @patch('purify.bl.robot.setSpeedPipette')
+    @patch('purify.addBeadsToAll')
+    def test_purifyOneCutoff__pipetting_delay__addBeadsToAll(self, 
+                                                             mock_addBeadsToAll,
+                                                             mock_setSpeedPipette,
+                                                             mock_mixManySamples,
+                                                             mock_moveMagnetsTowardsTube,
+                                                             mock_removeSupernatantAllSamples,
+                                                             mock_add80PctEthanol,
+                                                             mock_waitAfterTimestamp,
+                                                             mock_eluteAllSamples,
+                                                             mock_separateEluateAllTubes):
+        self.ber.setSpeedPipette = mock_setSpeedPipette
+        self.ber.setSpeedPipette = mock_moveMagnetsTowardsTube
         
+        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
+        ponec.purify_one_cutoff(self.ber, settings)
+        
+        mock_addBeadsToAll_first_call_first_arg = mock_addBeadsToAll.mock_calls[0][1][0]
+        mock_addBeadsToAll_first_call_delay_arg = mock_addBeadsToAll.mock_calls[0][2]['delay']
+        self.assertEqual(self.ber, mock_addBeadsToAll_first_call_first_arg)
+        self.assertEqual(1, mock_addBeadsToAll_first_call_delay_arg)
+        
+        
+    @patch('purify.separateEluateAllTubes')
+    @patch('purify.eluteAllSamples')
+    @patch('purify.waitAfterTimestamp')
+    @patch('purify.add80PctEthanol')
+    @patch('purify.removeSupernatantAllSamples')
+    @patch('purify.bl.robot.moveMagnetsTowardsTube')
+    @patch('purify.mixManySamples')
+    @patch('purify.bl.robot.setSpeedPipette')
+    @patch('purify.addBeadsToAll')
+    def test_purifyOneCutoff__pipette_speed(self, 
+                                                             mock_addBeadsToAll,
+                                                             mock_setSpeedPipette,
+                                                             mock_mixManySamples,
+                                                             mock_moveMagnetsTowardsTube,
+                                                             mock_removeSupernatantAllSamples,
+                                                             mock_add80PctEthanol,
+                                                             mock_waitAfterTimestamp,
+                                                             mock_eluteAllSamples,
+                                                             mock_separateEluateAllTubes):
+        self.ber.setSpeedPipette = mock_setSpeedPipette
+        self.ber.moveMagnetsTowardsTube = mock_moveMagnetsTowardsTube
+        
+        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
+        ponec.purify_one_cutoff(self.ber, settings)
+        
+        # Speed while pipetting beads in
+        
+        call_setting_beads_speed = self.ber.setSpeedPipette.mock_calls[0]
+        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[1]
+        
+        beads_speed = call_setting_beads_speed[1][0]
+        def_speed = call_setting_default_speed[1][0]
+        
+        self.assertEqual(beads_speed, 1500)
+        self.assertEqual(def_speed, 2500)
+        
+        # Speed while pipetting supernatant out
+        
+        call_setting_sup_speed = self.ber.setSpeedPipette.mock_calls[2]
+        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[3]
+        
+        sup_speed = call_setting_sup_speed[1][0]
+        def_speed = call_setting_default_speed[1][0]
+        
+        self.assertEqual(sup_speed, 1500)
+        self.assertEqual(def_speed, 2500)
+
+        # Speed while pipetting ethanol in and out
+        
+        call_setting_etoh_speed = self.ber.setSpeedPipette.mock_calls[4]
+        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[5]
+        
+        sup_speed = call_setting_etoh_speed[1][0]
+        def_speed = call_setting_default_speed[1][0]
+        
+        self.assertEqual(sup_speed, 2000)
+        self.assertEqual(def_speed, 2500)
+        
+        # Speed while pipetting eluent in
+        
+        call_setting_eluent_speed = self.ber.setSpeedPipette.mock_calls[6]
+        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[7]
+        
+        sup_speed = call_setting_eluent_speed[1][0]
+        def_speed = call_setting_default_speed[1][0]
+        
+        self.assertEqual(sup_speed, 1800)
+        self.assertEqual(def_speed, 2500)
+        
+        # Checking the final speed setting
+        # Making sure the script didn't accidentally chaned it.
+        self.assertEqual(self.ber.getSpeedPipette(), 2500)
+        
+    
     
     def test_transferAllSamplesToSecondStage(self):
         """
@@ -165,29 +277,26 @@ class one_step_cutoff_test_case(unittest.TestCase):
         ponec.transferSampleToSecondStage = real_transferSampleToSecondStage
         assertEqual(ponec.transferSampleToSecondStage, real_transferSampleToSecondStage)
         """
-        
+    
     def test_purifyTwoCutoffs_beads_volumes(self):
-        bl.time.sleep = mock.MagicMock()
-        bl.serial.Serial = mock.MagicMock()
-        ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         
         settings = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')
-        samples_list = ponec.initSamples(ber, settings)
-        beads, waste, water, EtOH80pct = ponec.initReagents(ber, settings)
+        samples_list = ponec.initSamples(self.ber, settings)
+        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
         
         ponec.addBeadsToAll = mock.MagicMock()
         ponec.mixManySamples = mock.MagicMock()
-        ber.moveMagnetsTowardsTube = mock.MagicMock()
+        self.ber.moveMagnetsTowardsTube = mock.MagicMock()
         ponec.time.sleep = mock.MagicMock()
         ponec.transferAllSamplesToSecondStage = mock.MagicMock()
-        ber.moveMagnetsAway = mock.MagicMock()
+        self.ber.moveMagnetsAway = mock.MagicMock()
         ponec.removeSupernatantAllSamples = mock.MagicMock()
         ponec.add80PctEthanol = mock.MagicMock()
         ponec.waitAfterTimestamp = mock.MagicMock()
         ponec.eluteAllSamples = mock.MagicMock()
         ponec.separateEluateAllTubes = mock.MagicMock()
         
-        ponec.purifyTwoCutoffs(ber, settings)
+        ponec.purifyTwoCutoffs(self.ber, settings)
         
         # Volumes
         volume_list_received_at_first_AddBeadsToAll = ponec.addBeadsToAll.mock_calls[0][1][2]
@@ -208,10 +317,7 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.assertEqual(samples_mix_elution[0].getWell(), (1, 6))
         self.assertEqual(samples_mix_elution[1].getWell(), (1, 7))
         self.assertEqual(samples_mix_elution[2].getWell(), (1, 8))
-        
-        
-        ber.close()
-        del ber
+
 
     def test_initIntermediate(self):
         settings = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')
@@ -222,17 +328,6 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.assertEqual(intermediate_samples_list[1].getWell(), (1, 7))
         self.assertEqual(intermediate_samples_list[2].getWell(), (1, 8))
         
-
-    def test_bernieInitAndClose(self):
-        #TODO: for some reason, unittest fails to open actual com ports.
-        self.assertTrue(ponec.areTwoPortsAvailable())
-        #self.assertEqual(ponec.bl.listSerialPorts(), ['COM3', 'COM4'])
-        #self.assertEqual(len(ponec.bl.listSerialPorts()), 2)
-        #ber = ponec.bl.robot()
-        #ber.home()
-        
-        
-        #ber.close()
     
     def test_returnTipRackType(self):
         self.setting_test_factory_default('old', ponec.returnTipRackType)
@@ -287,7 +382,8 @@ class one_step_cutoff_test_case(unittest.TestCase):
         try:
             del self.ber
         except:
-            pass        
+            pass      
+        logging.disable(logging.NOTSET)
             
     
 if __name__ == '__main__':

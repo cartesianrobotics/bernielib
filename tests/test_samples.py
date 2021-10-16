@@ -5,11 +5,16 @@ import pandas as pd
 
 import bernielib as bl
 
+from mock import patch
+
 class bernielib_test_case(unittest.TestCase):
     
-    def setUp(self):
-        bl.time.sleep = mock.MagicMock()
-        bl.serial.Serial = mock.MagicMock()
+    
+    @patch('purify.bl.time.sleep')
+    @patch('purify.bl.serial.Serial')
+    def setUp(self, mock_serial, mock_sleep):
+        #bl.time.sleep = mock.MagicMock()
+        #bl.serial.Serial = mock.MagicMock()
         self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         self.sample_type = 'test_sample_type'
         self.sample_name = 'test_sample'
