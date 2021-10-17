@@ -2,6 +2,7 @@ import unittest
 import mock
 import os
 import pandas as pd
+import logging
 
 import bernielib as bl
 
@@ -15,6 +16,7 @@ class bernielib_test_case(unittest.TestCase):
     def setUp(self, mock_serial, mock_sleep):
         #bl.time.sleep = mock.MagicMock()
         #bl.serial.Serial = mock.MagicMock()
+        logging.disable(logging.CRITICAL)
         self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         self.sample_type = 'test_sample_type'
         self.sample_name = 'test_sample'
@@ -160,6 +162,7 @@ class bernielib_test_case(unittest.TestCase):
             del self.ber
         except:
             pass
+        logging.disable(logging.NOTSET)
         
 if __name__ == '__main__':
     unittest.main(verbosity=2)

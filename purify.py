@@ -528,7 +528,7 @@ def addBeadsToAll(robot, samples_list,
         elif used_tip_fate == 'back':
             robot.returnTipBack()           # Back to the rack, so it can be reused later
         else:
-            print("Wrong tip fate provided. Dumping the tip to waste.")
+            logging.warning("Wrong tip fate provided. Dumping the tip to waste.")
             robot.dumpTipToWaste()
     
     return timestamp
@@ -579,12 +579,15 @@ def removeSupernatant(robot, sample, waste, z_safe=50, delay=0.5, fast=False):
     robot.move(z=z_safe)        # Moving up so the tip does not hit anything
 
 def removeSupernatantAllSamples(robot, samples_list, waste, delay=0.5, fast=False):
+    logging.info("Discarding the supernatant with small molecules to the waste.")
+    logging.info("Your desired DNA is on the beads now.")
     counter = 0
     for sample in samples_list:
         removeSupernatant(robot, sample, waste, delay=delay, fast=fast)
         if counter == 0:
             sample_dried_timestamp = time.time()
         counter += 1
+    logging.info("Supernatant removal complete.")
     return sample_dried_timestamp
 
 def add80PctEthanol(robot, samples_list, ethanol, volume_list, z_safe=50, delay=1.0):
@@ -993,10 +996,7 @@ def purifyTwoCutoffs(robot, settings):
     logging.info("Beads are now pulled to the side of the tubes.")
     
     # Removing supernatant (the desired DNA of larger molecular weight is on the beads)
-    logging.info("Discarding the supernatant with small molecules to the waste.")
-    logging.info("Your desired DNA is on the beads now.")
     ts = removeSupernatantAllSamples(robot, intermediate_list, waste, fast=True)
-    logging.info("Supernatant removal complete.")
     
     ethanolWash(robot, settings, intermediate_list, EtOH80pct, waste)
     elution(robot, settings, intermediate_list, result_list, water)
@@ -1011,32 +1011,25 @@ def purifyTwoCutoffs(robot, settings):
 # ===========================================================================================
 
 if __name__ == '__main__':
-    print(" ")
-    print("=================================================================================")
-    print("This is the script for purifying DNA mixture by removing any DNA molecules")
-    print("shorter then a certain size.")
-    print(" ")
-    print("I will start from running a few sanity checks")
+    logging.info("=================================================================================")
+    logging.info("/nThis is the script for purifying DNA mixture by removing any DNA molecules shorter then a certain size.")
+    logging.info("I will start from running a few sanity checks")
 
     # Making sure the argument provided
     if isArgumentPassed():
         settings_file_path = sys.argv[1]   # Getting the settings
-        print("Found an argument: "+settings_file_path+", OK")
+        logging.info("Found an argument: %s, OK" % settings_file_path)
     else:
         printHowToUse()
         sys.exit("Script terminated") 
 
     # Checking whether the samplesheet file exists
     if isSampleSheetExist(settings_file_path):
-        print("This file exists, OK")
+        logging.info("Checking whether the file %s exists... OK" % settings_file_path)
         # Loading data settings
         settings = loadSettings(settings_file_path)
     else:
-        print("Can't locate a samplesheet.")
-        print("You provided the following path to the samplesheet: ")
-        print(settings_file_path)
-        print("However, there was no file like that found.")
-        print(" ")
+        logging.error("Samplesheet not found in the path %s, or can't open that file." % settings_file_path)
         printHowToUse()
         sys.exit("Script terminated") 
         
@@ -1058,13 +1051,15 @@ if __name__ == '__main__':
     ber.home()
     
     if stages == 1:
-        purify_one_cutoff(ber, settings)
+        f = purify_one_cutoff
     elif stages == 2:
-        purifyTwoCutoffs(ber, settings)
+        f = purifyTwoCutoffs
     else:
-        print("Can't find the number of cutoffs.")
-        print("Specify 'Number of cutoffs' parameter in the sample sheet file.")
-        print("Set '1' if you want only to remove short DNA, set '2' if you want to remove both too short and too long DNA.")
+        logging.error("Wrong Number of Cutoffs provided in the samplesheet.")
+        logging.error("This protocol only supports values 1 or 2, however, value %s was provided." % stages)
+    
+    # This starts actual purification.
+    f(ber, settings)
 
     ber.powerStepperOff('A') # to prevent unnecessary heating. Must be off already, but just in case.
     ber.powerStepperOff()    # Powering off all steppers

@@ -2,6 +2,7 @@ import serial
 import sys
 import json
 import os
+import logging
 
 
 def listSerialPorts():
@@ -57,9 +58,9 @@ class data():
                 # Addting the missing setting to the local settings
                 self._setSetting(name, value)
             except:
-                print ("Error: setting ", name, " is not specified.")
-                print ("Use _setSetting('setting_name', value) to specify it.")
-                print ("Alternatively, do self.data['setting_name']=value to set it temporary.")
+                logging.error("Setting %s is not specified" % name)
+                logging.error("Use _setSetting('setting_name', value) to specify it.")
+                logging.error("Alternatively, do self.data['setting_name']=value to set it temporary.")
                 return
         return value
         

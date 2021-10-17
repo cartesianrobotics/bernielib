@@ -3,6 +3,7 @@ import os
 import mock
 import json
 import shutil
+import logging
 
 import general
 
@@ -10,10 +11,12 @@ import general
 class settings_test_case(unittest.TestCase):
     
     def setUp(self):
-    
+        
+        
+        
         # Running teardown to get rid of leftover files (if any):
         self.tearDown()
-        
+        logging.disable(logging.CRITICAL)
         # Creating a settings dir for the test
         mock_data = {
             'the_other_setting': 38,
@@ -33,7 +36,8 @@ class settings_test_case(unittest.TestCase):
         try:
             os.mkdir('./factory_default_for_test_purposes/')
         except:
-            print("Factory setting directory existed from the last try")
+            pass
+            
         
         f = open('./factory_default_for_test_purposes/'+self.name+'.json', 'w')
         f.write(json.dumps(mock_factory_data))
@@ -63,7 +67,6 @@ class settings_test_case(unittest.TestCase):
     def test__request_nonexisting_setting(self):
         self.assertFalse(self.dummy_obj._settingPresent('this_one_setting'))
         self.assertIsNone(self.dummy_obj._getSetting('this_one_setting'))
-        
 
     def test__request_existing_setting(self):
         self.assertTrue(self.dummy_obj._settingPresent('the_other_setting'))
@@ -114,3 +117,4 @@ class settings_test_case(unittest.TestCase):
             os.rmdir('./factory_default_for_test_purposes/')
         except:
             pass
+        logging.disable(logging.NOTSET)

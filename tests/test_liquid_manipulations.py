@@ -1,12 +1,19 @@
 import unittest
 import mock
+import logging
 
 import bernielib as bl
 
 from mock import patch
 
 class bernielib_test_case(unittest.TestCase):
-
+    
+    def setUp(self):
+        logging.disable(logging.CRITICAL)
+        
+    def tearDown(self):
+        logging.disable(logging.NOTSET)
+    
     @patch('purify.bl.time.sleep')
     @patch('purify.bl.serial.Serial')    
     def test_moveDownUntilPress(self, mock_serial, mock_sleep):
