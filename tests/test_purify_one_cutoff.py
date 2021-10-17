@@ -250,9 +250,9 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.assertEqual(self.ber.getSpeedPipette(), 2500)
         
     
-    
+    """
     def test_transferAllSamplesToSecondStage(self):
-        """
+        
         real_transferSampleToSecondStage = ponec.transferSampleToSecondStage
         ponec.transferSampleToSecondStage = mock.MagicMock()
         
@@ -276,38 +276,54 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         ponec.transferSampleToSecondStage = real_transferSampleToSecondStage
         assertEqual(ponec.transferSampleToSecondStage, real_transferSampleToSecondStage)
-        """
-    
-    def test_purifyTwoCutoffs_beads_volumes(self):
+    """
+
+
+    @patch('purify.transferAllSamplesToSecondStage')
+    @patch('purify.separateEluateAllTubes')
+    @patch('purify.eluteAllSamples')
+    @patch('purify.waitAfterTimestamp')
+    @patch('purify.add80PctEthanol')
+    @patch('purify.removeSupernatantAllSamples')
+    @patch('purify.bl.robot.moveMagnetsAway')
+    @patch('purify.bl.robot.moveMagnetsTowardsTube')
+    @patch('purify.mixManySamples')
+    @patch('purify.bl.robot.setSpeedPipette')
+    @patch('purify.addBeadsToAll')    
+    def test_purifyTwoCutoffs_beads_volumes(self,
+                                            mock_addBeadsToAll,
+                                            mock_setSpeedPipette,
+                                            mock_mixManySamples,
+                                            mock_moveMagnetsTowardsTube,
+                                            mock_moveMagnetsAway,
+                                            mock_removeSupernatantAllSamples,
+                                            mock_add80PctEthanol,
+                                            mock_waitAfterTimestamp,
+                                            mock_eluteAllSamples,
+                                            mock_separateEluateAllTubes,
+                                            mock_transferAllSamplesToSecondStage,
+                                            ):
+        
+        self.ber.moveMagnetsTowardsTube = mock_moveMagnetsTowardsTube
+        self.ber.moveMagnetsAway = mock_moveMagnetsAway
+        self.ber.setSpeedPipette = mock_setSpeedPipette
         
         settings = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')
         samples_list = ponec.initSamples(self.ber, settings)
         beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
         
-        ponec.addBeadsToAll = mock.MagicMock()
-        ponec.mixManySamples = mock.MagicMock()
-        self.ber.moveMagnetsTowardsTube = mock.MagicMock()
-        ponec.time.sleep = mock.MagicMock()
-        ponec.transferAllSamplesToSecondStage = mock.MagicMock()
-        self.ber.moveMagnetsAway = mock.MagicMock()
-        ponec.removeSupernatantAllSamples = mock.MagicMock()
-        ponec.add80PctEthanol = mock.MagicMock()
-        ponec.waitAfterTimestamp = mock.MagicMock()
-        ponec.eluteAllSamples = mock.MagicMock()
-        ponec.separateEluateAllTubes = mock.MagicMock()
-        
         ponec.purifyTwoCutoffs(self.ber, settings)
         
         # Volumes
-        volume_list_received_at_first_AddBeadsToAll = ponec.addBeadsToAll.mock_calls[0][1][2]
-        volume_list_received_at_second_AddBeadsToAll = ponec.addBeadsToAll.mock_calls[1][1][2]
+        volume_list_received_at_first_AddBeadsToAll = mock_addBeadsToAll.mock_calls[0][1][2]
+        volume_list_received_at_second_AddBeadsToAll = mock_addBeadsToAll.mock_calls[1][1][2]
         self.assertEqual(volume_list_received_at_first_AddBeadsToAll, [80, 70, 60])
         self.assertEqual(volume_list_received_at_second_AddBeadsToAll, [140, 110, 67])
         
         # Mixing
-        samples_list_1st_abs_mix = ponec.mixManySamples.mock_calls[0][1][1]
-        samples_list_2nd_abs_mix = ponec.mixManySamples.mock_calls[1][1][1]
-        samples_mix_elution = ponec.mixManySamples.mock_calls[2][1][1]
+        samples_list_1st_abs_mix = mock_mixManySamples.mock_calls[0][1][1]
+        samples_list_2nd_abs_mix = mock_mixManySamples.mock_calls[1][1][1]
+        samples_mix_elution = mock_mixManySamples.mock_calls[2][1][1]
         self.assertEqual(samples_list_1st_abs_mix[0].getWell(), (1, 0))
         self.assertEqual(samples_list_1st_abs_mix[1].getWell(), (1, 1))
         self.assertEqual(samples_list_1st_abs_mix[2].getWell(), (1, 2))
@@ -318,6 +334,110 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.assertEqual(samples_mix_elution[1].getWell(), (1, 7))
         self.assertEqual(samples_mix_elution[2].getWell(), (1, 8))
 
+
+    @patch('purify.removeSupernatantAllSamples')
+    @patch('purify.waitAfterTimestamp')
+    @patch('purify.bl.robot.setSpeedPipette')
+    @patch('purify.add80PctEthanol')
+    def test_ethanolWash(self,
+                         mock_add80PctEthanol,
+                         mock_setSpeedPipette,
+                         mock_waitAfterTimestamp,
+                         mock_removeSupernatantAllSamples,
+                         ):
+        # Loading necessary parameters
+        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
+        samples_list = ponec.initSamples(self.ber, settings)
+        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
+        
+        # Running the function to be tested
+        ponec.ethanolWash(self.ber, settings, samples_list, EtOH80pct, waste)
+        
+        # Making sure the reagents (ethanol and waste) are where they should be
+        ethanol_obj_provided_to_1st_add80PctEthanol = mock_add80PctEthanol.mock_calls[0][1][2]
+        self.assertEqual(ethanol_obj_provided_to_1st_add80PctEthanol, EtOH80pct)
+        ethanol_sample_well = ethanol_obj_provided_to_1st_add80PctEthanol.getWell()
+        self.assertEqual(ethanol_sample_well, (0,2))
+        self.assertEqual(ethanol_obj_provided_to_1st_add80PctEthanol.rack, self.ber.reagents_rack)
+        
+        ethanol_obj_provided_to_2nd_add80PctEthanol = mock_add80PctEthanol.mock_calls[1][1][2]
+        self.assertEqual(ethanol_obj_provided_to_2nd_add80PctEthanol, EtOH80pct)
+        ethanol_sample_well = ethanol_obj_provided_to_2nd_add80PctEthanol.getWell()
+        self.assertEqual(ethanol_sample_well, (0,2))
+        self.assertEqual(ethanol_obj_provided_to_2nd_add80PctEthanol.rack, self.ber.reagents_rack)
+        
+        # Testing the samples positions
+        # First call to add 80% ethanol
+        s1, s2, s3 = mock_add80PctEthanol.mock_calls[0][1][1]
+        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, samples_list[1])
+        self.assertEqual(s3, samples_list[2])
+        self.assertEqual(s1.getWell(), (1, 0))  # Samples are in the right wells
+        self.assertEqual(s2.getWell(), (1, 1))
+        self.assertEqual(s3.getWell(), (1, 2))
+        self.assertEqual(s1.rack, self.ber.samples_rack)
+        self.assertEqual(s2.rack, self.ber.samples_rack)
+        self.assertEqual(s3.rack, self.ber.samples_rack)
+        
+        # Second call to add 80% ethanol
+        s1, s2, s3 = mock_add80PctEthanol.mock_calls[1][1][1]
+        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, samples_list[1])
+        self.assertEqual(s3, samples_list[2])
+        self.assertEqual(s1.getWell(), (1, 0))  # Samples are in the right wells
+        self.assertEqual(s2.getWell(), (1, 1))
+        self.assertEqual(s3.getWell(), (1, 2))
+        self.assertEqual(s1.rack, self.ber.samples_rack)
+        self.assertEqual(s2.rack, self.ber.samples_rack)
+        self.assertEqual(s3.rack, self.ber.samples_rack)
+        
+        # Supernatant removed after 1st wash
+        s1, s2, s3 = mock_removeSupernatantAllSamples.mock_calls[0][1][1]
+        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, samples_list[1])
+        self.assertEqual(s3, samples_list[2])
+
+    
+    @patch('purify.separateEluateAllTubes')
+    @patch('purify.bl.robot.moveMagnetsAway')
+    @patch('purify.bl.robot.moveMagnetsTowardsTube')
+    @patch('purify.mixManySamples')
+    @patch('purify.eluteAllSamples')
+    @patch('purify.bl.robot.setSpeedPipette')
+    def test_elution(self, 
+                     mock_setSpeedPipette,
+                     mock_eluteAllSamples,
+                     mock_mixManySamples,
+                     mock_moveMagnetsTowardsTube,
+                     mock_moveMagnetsAway,
+                     mock_separateEluateAllTubes,
+                     ):
+        # Loading necessary parameters
+        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
+        samples_list = ponec.initSamples(self.ber, settings)
+        result_list = ponec.initResultTubes(self.ber, settings)
+        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
+        
+        # Running the function to be tested
+        ponec.elution(self.ber, settings, samples_list, result_list, water)
+        
+        # Function eluteAllSamples receives the right samples
+        s1, s2, s3 = mock_eluteAllSamples.mock_calls[0][1][1]
+        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, samples_list[1])
+        self.assertEqual(s3, samples_list[2])
+        supposed_water = mock_eluteAllSamples.mock_calls[0][1][2]
+        self.assertEqual(water, supposed_water)
+        # Function separateEluateAllTubes recives the right samples
+        s1, s2, s3 = mock_separateEluateAllTubes.mock_calls[0][1][1]
+        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, samples_list[1])
+        self.assertEqual(s3, samples_list[2])
+        r1, r2, r3 = mock_separateEluateAllTubes.mock_calls[0][1][2]
+        self.assertEqual(r1, result_list[0])   # Samples are what they should be.
+        self.assertEqual(r2, result_list[1])
+        self.assertEqual(r3, result_list[2])
+    
 
     def test_initIntermediate(self):
         settings = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')

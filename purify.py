@@ -793,6 +793,45 @@ def separateEluateAllTubes(robot, eluate_list, results_list, pipette_delay=1.0):
         separateEluate(robot, sample, result, pipette_delay=pipette_delay)
 
 
+def elution(robot, settings, samples_list, result_list, water):
+    """
+    Call this function in the protocol
+    """
+    # Loading parameters
+    T_pull = returnProtocolParameter(settings, 'Beads pulling time after absorption') * 60.0
+    
+    v_eluent_list = getEluentVolume(settings)
+    
+    pipetting_delay = returnPipettingDelay(settings)
+    
+    eluent_pipetting_speed = returnEluentPipettingSpeed(settings)
+    max_pipette_speed = returnMaxPipetteSpeed(settings)
+    
+    # Adding eluent
+    logging.info("Now eluting the DNA from the samples.")
+    logging.info("Now adding the eluent to all the samples.")
+    # Setting the pipette speed for the eluent solution (usually water)
+    robot.setSpeedPipette(eluent_pipetting_speed)
+    elution_start_timestamp = eluteAllSamples(robot, samples_list, water, v_eluent_list, 
+                                              settings, pipetting_delay=pipetting_delay)
+    logging.info("Eluent added to all the samples.")
+    logging.info("Now mixing the samples...")
+    mixManySamples(robot, samples_list, elution_start_timestamp, settings)
+    logging.info("Mixing finished.")
+    
+    # Pulling beads to the side
+    logging.info("Now pulling the beads towards the side of the tubes for %s minutes" % ((T_pull/60.0), ))
+    robot.moveMagnetsTowardsTube()
+    time.sleep(T_pull)
+    logging.info("Beads are now at the side of their tubes.")
+    
+    # Moving eluate to the results tubes
+    logging.info("Now moving the eluates to their fresh tubes...")
+    separateEluateAllTubes(robot, samples_list, result_list, pipette_delay=pipetting_delay)
+    logging.info("Eluate transfer complete.")
+    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
+
+
 def purify_one_cutoff(robot, settings):
     """
     Functions for 1-cutoff purification, that removes lower length DNA.
@@ -857,69 +896,12 @@ def purify_one_cutoff(robot, settings):
     robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
     logging.info("Supernatant removed from all the tubes.")
     
-    
+    # Ethanol wash.
     ethanolWash(robot, settings, samples_list, EtOH80pct, waste)
-    """
-    # 1st stage ethanol wash
-    logging.info("Now performing two ethanol washes.")
-    logging.info("Wash-1: Now adding 80% ethanol to all the samples...")
-    # Setting the pipette speed for the less viscous ethanol solution
-    robot.setSpeedPipette(ethanol_pipetting_speed)
-    timestamp_ethanol_added = add80PctEthanol(robot, samples_list, EtOH80pct, 
-                                              v_ethanol_1st_stage_list, delay=pipetting_delay)
-    logging.info("Wash-1: 80% ethanol added to all tubes.")
-    logging.info("Wash-1: Now incubating the samples for %s seconds..." % (T_wash_1, ))
-    waitAfterTimestamp(timestamp_ethanol_added, T_wash_1)
-    logging.info("Wash-1: Ethanol incubation finished.")
-    logging.info("Wash-1: Now removing ethanol from the sample tubes...")
-    ts = removeSupernatantAllSamples(robot, samples_list, waste, fast=True, delay=pipetting_delay)
-    logging.info("Wash-1: Ethanol removed from all the samples.")
-    
-    # 2nd stage ethanol wash
-    logging.info("Now proceeding to the second ethanol wash.")
-    logging.info("Wash-2: Now adding 80% ethanol to all the samples...")
-    timestamp_ethanol_added = add80PctEthanol(robot, samples_list, EtOH80pct, 
-                                              v_ethanol_2nd_stage_list, delay=pipetting_delay)
-    logging.info("Wash-2: 80% ethanol added to all tubes.")
-    logging.info("Wash-2: Now incubating the samples for %s seconds..." % (T_wash_2, ))
-    waitAfterTimestamp(timestamp_ethanol_added, T_wash_2)
-    logging.info("Wash-2: Ethanol incubation finished.")
-    logging.info("Wash-2: Now removing ethanol from the sample tubes...")
-    timestamp_ethanol_removed = removeSupernatantAllSamples(robot, samples_list, 
-                                                            waste, delay=pipetting_delay)
-    logging.info("Wash-2: Ethanol removed from all the samples.")
-    logging.info("Ethanol washes complete.")
-    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
-    
-    # Drying ethanol
-    logging.info("Now drying the samples from the remaining ethanol for %s minutes..." % ((T_dry/60.0), ))
-    waitAfterTimestamp(timestamp_ethanol_removed, T_dry)
-    logging.info("Ethanol drying finished.")
-    """
+
     # Elution
-    # Adding eluent
-    logging.info("Now eluting the DNA from the samples.")
-    logging.info("Now adding the eluent to all the samples.")
-    # Setting the pipette speed for the eluent solution (usually water)
-    robot.setSpeedPipette(eluent_pipetting_speed)
-    elution_start_timestamp = eluteAllSamples(robot, samples_list, water, v_eluent_list, 
-                                              settings, pipetting_delay=pipetting_delay)
-    logging.info("Eluent added to all the samples.")
-    logging.info("Now mixing the samples...")
-    mixManySamples(robot, samples_list, elution_start_timestamp, settings)
-    logging.info("Mixing finished.")
+    elution(robot, settings, samples_list, result_list, water)
     
-    # Pulling beads to the side
-    logging.info("Now pulling the beads towards the side of the tubes for %s minutes" % ((T_pull/60.0), ))
-    robot.moveMagnetsTowardsTube()
-    time.sleep(T_pull)
-    logging.info("Beads are now at the side of their tubes.")
-    
-    # Moving eluate to the results tubes
-    logging.info("Now moving the eluates to their fresh tubes...")
-    separateEluateAllTubes(robot, samples_list, result_list, pipette_delay=pipetting_delay)
-    logging.info("Eluate transfer complete.")
-    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
     logging.info("One-stage purification finished.")
     
 
@@ -1016,54 +998,10 @@ def purifyTwoCutoffs(robot, settings):
     ts = removeSupernatantAllSamples(robot, intermediate_list, waste, fast=True)
     logging.info("Supernatant removal complete.")
     
-    # 1st stage ethanol wash
+    ethanolWash(robot, settings, intermediate_list, EtOH80pct, waste)
+    elution(robot, settings, intermediate_list, result_list, water)
     
-    print("Now starting ethanol washes.")
-    print("Adding 80% ethanol. Started ", datetime.now().strftime("%H:%M:%S"))
-    timestamp_ethanol_added = add80PctEthanol(robot, intermediate_list, EtOH80pct, v_ethanol_1st_stage_list)
-    print("Wash 1: ethanol added ", datetime.now().strftime("%H:%M:%S"))
-    waitAfterTimestamp(timestamp_ethanol_added, T_wash_1)
-    print("Wash 1: ethanol incubation finished ", datetime.now().strftime("%H:%M:%S"))
-    ts = removeSupernatantAllSamples(robot, intermediate_list, waste, fast=True)
-    print("Wash 1: ethanol removed ", datetime.now().strftime("%H:%M:%S"))
-    
-    # 2nd stage ethanol wash
-    timestamp_ethanol_added = add80PctEthanol(robot, intermediate_list, EtOH80pct, v_ethanol_2nd_stage_list)
-    print("Wash 2: ethanol added ", datetime.now().strftime("%H:%M:%S"))
-    waitAfterTimestamp(timestamp_ethanol_added, T_wash_2)
-    print("Wash 2: ethanol incubation finished ", datetime.now().strftime("%H:%M:%S"))
-    timestamp_ethanol_removed = removeSupernatantAllSamples(robot, intermediate_list, waste)
-    print("Wash 2: ethanol removed ", datetime.now().strftime("%H:%M:%S"))
-    
-    # Drying ethanol
-    print("Now drying the tubes from the remaining ethanol.")
-    print("Time to dry: ", str(T_dry))
-    print("Drying started: ", datetime.now().strftime("%H:%M:%S"))
-    waitAfterTimestamp(timestamp_ethanol_removed, T_dry)
-    print("Ethanol drying finished ", datetime.now().strftime("%H:%M:%S"))
-    
-    # Elution
-    # Adding eluent
-    print("Starting elution. Started ", datetime.now().strftime("%H:%M:%S"))
-    elution_start_timestamp = eluteAllSamples(robot, intermediate_list, water, v_eluent_list, settings)
-    print("Eluent added ", datetime.now().strftime("%H:%M:%S"))
-    print("Now mixing the samples. Started at ", datetime.now().strftime("%H:%M:%S"))
-    mixManySamples(robot, intermediate_list, elution_start_timestamp, settings)
-    print("Elution incubation finished ", datetime.now().strftime("%H:%M:%S"))
-    
-    # Pulling beads to the side
-    print("Now pulling the beads towards the tube side")
-    print("Pulling time is "+str(T_pull/60)+" minutes")
-    print("Started ", datetime.now().strftime("%H:%M:%S"))
-    robot.moveMagnetsTowardsTube()
-    time.sleep(T_pull)
-    print("Beads pulled to the side ", datetime.now().strftime("%H:%M:%S"))
-    
-    # Moving eluate to the results tubes
-    print("Now moving the eluate to the results tubes. Started ", datetime.now().strftime("%H:%M:%S"))
-    separateEluateAllTubes(robot, intermediate_list, result_list)
-    print("Eluate transferred to the new tube ", datetime.now().strftime("%H:%M:%S"))
-    print("Purification finished ", datetime.now().strftime("%H:%M:%S"))
+    logging.info("Two-stage purification finished.")
     
     
     
