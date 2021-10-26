@@ -48,7 +48,7 @@ Elution times to mix,How many times to repeat a mixing cycle. Put more if you no
 Times to mix while eluting,"While waiting for elution, the robot will attempt to mix the samples this many times.",1,,,,,,,,,,,,
 Load cells controller port,"Keep “auto” value unless you know what you are doing. Option to manually provide a port name, such as COM3. Useful if you have several serial port devices simultaneously connected to this computer. ",auto,,,,,,,,,,,,
 Cartesian controller port,"Keep “auto” value unless you know what you are doing. Option to manually provide a port name, such as COM3. Useful if you have several serial port devices simultaneously connected to this computer. ",auto,,,,,,,,,,,,
-Tip rack type,"Select “old” for a green rack, or “new” for the new rack from Mettler Toledo",old,,,,,,,,,,,,
+Tip Rack Type,"Select “old” for a green rack, or “new” for the new rack from Mettler Toledo",old,,,,,,,,,,,,
 ,,,,,,,,,,,,,,
 Delay after pipetting,"Seconds. After the pipette plunger finishes its movement, the robot will wait for this amount of time. Specify longer times if the robot starts moving before uptaking all the liquid",1,,,,,,,,,,,,
 Maximum pipetting speed,Do not change unless you know what you are doing. Lower this value if you notise the pipette stepper motor skips steps,2500,,,,,,,,,,,,

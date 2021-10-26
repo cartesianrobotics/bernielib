@@ -124,6 +124,8 @@ class settings():
         self.beads_pipetting_speed = self.returnProtocolParameter('Beads pipetting speed')
         self.ethanol_pipetting_speed = self.returnProtocolParameter('Ethanol pipetting speed')
         self.eluent_pipetting_speed = self.returnProtocolParameter('Eluent pipetting speed')
+        self.elution_times_to_mix = int(self.returnProtocolParameter('Elution times to mix'))
+        self.absorption_times_to_mix = int(self.returnProtocolParameter('Times to mix while absorbing'))
         self.initial_sample_vol_list = self._returnSampleParameterList('Initial sample volume')
         self.number_of_samples = len(self.initial_sample_vol_list)
         self.positions_to_purify_list = self.positionsToPurify()
@@ -145,9 +147,9 @@ class settings():
         self.ethanol_column_in_rack, self.ethanol_row_in_rack = self._getTubePositionInRack('Ethanol')
         
         self.V_beads = self.returnProtocolParameter('Beads initial volume')
-        self.V_waste = self.returnProtocolParameter('Waste initial volume')
-        self.V_eluent = self.returnProtocolParameter('Eluent initial volume')
-        self.V_ethanol = self.returnProtocolParameter('Ethanol initial volume')
+        self.V_waste = self.returnProtocolParameter('Waste volume')
+        self.V_eluent = self.returnProtocolParameter('Eluent volume')
+        self.V_ethanol = self.returnProtocolParameter('Ethanol volume')
         
         self.beads_vol_1st_stage_list = self._getBeadsVolForAllSamples(stage=1)
         # Will get some meaningful data only if cutoffs setting is 2.
@@ -156,6 +158,14 @@ class settings():
         self.wash_1_vol_list = self._returnSampleParameterList('First stage ethanol wash volume')
         self.wash_2_vol_list = self._returnSampleParameterList('Second stage ethanol wash volume')
         self.eluent_vol_list = self._returnSampleParameterList('Elution volume')
+        
+        # Time to wait for different processes (in seconds)
+        self.T_pull = self.returnProtocolParameter('Beads pulling time after absorption') * 60.0
+        self.T_wash_1 = self.returnProtocolParameter('First stage ethanol wash time') * 60.0
+        self.T_wash_2 = self.returnProtocolParameter('Second stage ethanol wash time') * 60.0
+        self.T_dry = self.returnProtocolParameter('Time to dry after ethanol wash') * 60.0
+        self.T_elute = self.returnProtocolParameter('Elution time') * 60.0
+        self.T_absoprtion = self.returnProtocolParameter('DNA absorption time') * 60.0
         
         
     def returnPort(self, kind):
@@ -181,8 +191,13 @@ class settings():
             return 
 
     def _getTubePositionInRack(self, reagent):
-        col = int(self.returnProtocolParameter(reagent+' tube column'))
-        row = int(self.returnProtocolParameter(reagent+' tube well'))
+        if reagent == 'Beads':
+            col = int(self.returnProtocolParameter(reagent+' tube column'))
+            row = int(self.returnProtocolParameter(reagent+' tube well'))
+        elif reagent == 'Waste' or reagent == 'Eluent' or reagent == 'Ethanol':
+            col = 0
+            row = int(self.returnProtocolParameter(reagent+' tube position'))
+            
         return col, row
 
 
@@ -417,16 +432,7 @@ def returnEluentPipettingSpeed(settings):
 # ===========================================================================================
 
 def initSamples(robot, settings):
-    initial_vol_list = []
-    # Getting list of positions at which samples are placed
-    samples_positions_list = positionsToPurify(settings)
-    # Obtaining initial sample volume from settings
-    for position in samples_positions_list:
-        volume = returnSampleParameter(settings, 'Initial sample volume', position)
-        initial_vol_list.append(volume)
-    # Initializing sample instances
-    samples_list = bl.createSamplesToPurifyList(robot, initial_vol_list)
-    return samples_list
+    return bl.createSamplesToPurifyList(robot, settings.initial_sample_vol_list)
 
 def initIntermediate(robot, settings):
     samples_positions_list = positionsToPurify(settings)
@@ -699,12 +705,9 @@ def mixManySamples(robot, samples_list, timestamp, settings):
     """
     Will perform an extra mixes for all the samples provided in samples_list.
     """
-    # Retrieving parameters for the mixing process
-    delay = returnProtocolParameter(settings, 'DNA absorption time') * 60.0
-    mix_cycle_number = int(returnProtocolParameter(settings, 'Times to mix while absorbing'))
     first_sample = samples_list[0]
     mix_script = first_sample.stype.getMixScript()
-    delay_between_mixes = delay / (mix_cycle_number + 1)
+    delay_between_mixes = settings.T_absoprtion / (settings.absorption_times_to_mix + 1)
     # Waiting before the first mix.
     # Needed for the case when the mix cycle number = 0. In this case, 
     # no mixing will happen, just waiting.
@@ -713,7 +716,7 @@ def mixManySamples(robot, samples_list, timestamp, settings):
     wait_time_until_next_mix = delay_between_mixes - time_spent_pipetting
     if wait_time_until_next_mix >= 0:
         time.sleep(wait_time_until_next_mix)    
-    for cycle in range(int(mix_cycle_number)):
+    for cycle in range(settings.absorption_times_to_mix):
         for sample in samples_list:
             robot.pickUpNextTip()
             robot.move(z=50)    
@@ -998,7 +1001,7 @@ def elute(robot, sample, eluent, volume, settings,
     
     # Loading parameters
     if mix_times is None:
-        mix_times = int(returnProtocolParameter(settings, 'Elution times to mix'))
+        mix_times = settings.elution_times_to_mix
     
     robot.moveMagnetsAway(poweroff=True)
     robot.pickUpNextTip()
@@ -1056,80 +1059,55 @@ def elution(robot, settings, samples_list, result_list, water):
     """
     Call this function in the protocol
     """
-    # Loading parameters
-    T_pull = returnProtocolParameter(settings, 'Beads pulling time after absorption') * 60.0
-    
-    v_eluent_list = getEluentVolume(settings)
-    
-    pipetting_delay = returnPipettingDelay(settings)
-    
-    eluent_pipetting_speed = returnEluentPipettingSpeed(settings)
-    max_pipette_speed = returnMaxPipetteSpeed(settings)
-    
+    s = settings
     # Adding eluent
     logging.info("Now eluting the DNA from the samples.")
     logging.info("Now adding the eluent to all the samples.")
     # Setting the pipette speed for the eluent solution (usually water)
-    robot.setSpeedPipette(eluent_pipetting_speed)
-    elution_start_timestamp = eluteAllSamples(robot, samples_list, water, v_eluent_list, 
-                                              settings, pipetting_delay=pipetting_delay)
+    robot.setSpeedPipette(s.eluent_pipetting_speed)
+    elution_start_timestamp = eluteAllSamples(robot, samples_list, water, s.eluent_vol_list, 
+                                              settings, pipetting_delay=s.pipetting_delay)
     logging.info("Eluent added to all the samples.")
     logging.info("Now mixing the samples...")
     mixManySamples(robot, samples_list, elution_start_timestamp, settings)
     logging.info("Mixing finished.")
     
     # Pulling beads to the side
-    logging.info("Now pulling the beads towards the side of the tubes for %s minutes" % ((T_pull/60.0), ))
+    logging.info("Now pulling the beads towards the side of the tubes for %s minutes" % ((s.T_pull/60.0), ))
     robot.moveMagnetsTowardsTube()
-    time.sleep(T_pull)
+    time.sleep(s.T_pull)
     logging.info("Beads are now at the side of their tubes.")
     
     # Moving eluate to the results tubes
     logging.info("Now moving the eluates to their fresh tubes...")
-    separateEluateAllTubes(robot, samples_list, result_list, pipette_delay=pipetting_delay)
+    separateEluateAllTubes(robot, samples_list, result_list, pipette_delay=s.pipetting_delay)
     logging.info("Eluate transfer complete.")
-    robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
+    robot.setSpeedPipette(s.default_pipette_speed) # Resetting the max pipette speed
 
 
-def purify_one_cutoff(robot, settings):
+def purify_one_cutoff(robot, settings, settings_obj):
     """
+    TODO: settings_obj is a temporary parameter. Goal is to replace settings -> settings_obj
     Functions for 1-cutoff purification, that removes lower length DNA.
     Call this function to perform an entire purification
     """
+    s = settings_obj
     # Loading settings
-    samples_list = initSamples(robot, settings)
+    samples_list = initSamples(robot, s)
     result_list = initResultTubes(robot, settings)
     beads, waste, water, EtOH80pct = initReagents(robot, settings)
-    positions_list = positionsToPurify(settings)
-    v_beads_list = getBeadsVolumesForAllSamples(settings, positions_list)
-    v_ethanol_1st_stage_list = getWashVolume(settings, 1)
-    v_ethanol_2nd_stage_list = getWashVolume(settings, 2)
-    v_eluent_list = getEluentVolume(settings)
-    
-    pipetting_delay = returnPipettingDelay(settings)
-    
-    max_pipette_speed = returnMaxPipetteSpeed(settings)
-    beads_pipetting_speed = returnBeadsPipettingSpeed(settings)
-    ethanol_pipetting_speed = returnEthanolPipettingSpeed(settings)
-    eluent_pipetting_speed = returnEluentPipettingSpeed(settings)
-    
-    T_pull = returnProtocolParameter(settings, 'Beads pulling time after absorption') * 60.0
-    T_wash_1 = returnProtocolParameter(settings, 'First stage ethanol wash time') * 60.0
-    T_wash_2 = returnProtocolParameter(settings, 'Second stage ethanol wash time') * 60.0
-    T_dry = returnProtocolParameter(settings, 'Time to dry after ethanol wash') * 60.0
-    T_elute = returnProtocolParameter(settings, 'Elution time') * 60.0
-    
     
     logging.info("This is the one-stage magnetic beads purification.")
     logging.info("It will remove any DNA and other molecules of low molecular weight.")
     logging.info("I will purify "+str(len(samples_list))+" samples")
-    logging.info("I will use %s uL of magnetic beads to purify." % (v_beads_list, ))
-    logging.info("I will elute the resulting DNA with %s uL of eluent" % (v_eluent_list, ))
+    logging.info("I will use %s uL of magnetic beads to purify." % (s.beads_vol_1st_stage_list, ))
+    logging.info("I will elute the resulting DNA with %s uL of eluent" % (s.V_eluent, ))
     
     # Starting the physical protocol
     logging.info("Now adding magnetic beads...")
-    timestamp_beads_added = addBeadsToAll(robot, samples_list, v_beads_list, beads, 
-                                          pipetting_speed=beads_pipetting_speed, delay=pipetting_delay)
+    timestamp_beads_added = addBeadsToAll(robot, samples_list, s.beads_vol_1st_stage_list, beads, 
+                                          pipetting_speed=s.beads_pipetting_speed, 
+                                          delay=s.pipetting_delay)
     logging.info("Beads addition complete.")
     logging.info("Now waiting for DNA absorption...")
     
@@ -1139,66 +1117,46 @@ def purify_one_cutoff(robot, settings):
     
     # Pulling beads to the side
     logging.info("DNA absorption complete.")
-    logging.info("Now pulling the beads towards the side of the tube for %s minutes..." % ((T_pull/60.0), ))
+    logging.info("Now pulling the beads towards the side of the tube for %s minutes..." % ((s.T_pull/60.0), ))
     robot.moveMagnetsTowardsTube(poweroff=True)
-    time.sleep(T_pull)
+    time.sleep(s.T_pull)
     
     # Removing supernatant (the desired DNA of larger molecular weight is on the beads)
     logging.info("Beads are now on the side of the tube.")
     logging.info("Now removing the supernatant...")
     # Setting the pipette speed for the viscous beads supernatant
-    ts = removeSupernatantAllSamples(robot, samples_list, waste, beads_pipetting_speed, 
-                                     fast=True, delay=pipetting_delay)
+    ts = removeSupernatantAllSamples(robot, samples_list, waste, s.beads_pipetting_speed, 
+                                     fast=True, delay=s.pipetting_delay)
     logging.info("Supernatant removed from all the tubes.")
     
     # Ethanol wash.
     ethanolWash(robot, settings, samples_list, EtOH80pct, waste)
 
     # Elution
-    elution(robot, settings, samples_list, result_list, water)
+    elution(robot, s, samples_list, result_list, water)
     
     logging.info("One-stage purification finished.")
     
 
-def purifyTwoCutoffs(robot, settings):
+def purifyTwoCutoffs(robot, settings, settings_obj):
     """
+    TODO: settings_obj is a temporary parameter. Goal is to replace settings -> settings_obj
     Performs two-cutoffs purification; removing shorter and longer DNA.
     Call this function to perform entire purification
     """
     # Loading settings
-    samples_list = initSamples(robot, settings)
+    s = settings_obj
+    samples_list = initSamples(robot, s)
     intermediate_list = initIntermediate(robot, settings) # Tubes at which the 2nd stage is performed.
     result_list = initResultTubes(robot, settings)
     beads, waste, water, EtOH80pct = initReagents(robot, settings)
-    positions_1st_stage_list = positionsToPurify(settings)
-    positions_2nd_stage_list = positionsToPurify2ndStage(settings)
-    # Both should have positions_1st_stage_list
-    v_beads_1st_stage_list = getBeadsVolume1stStageAllSamples(settings, positions_1st_stage_list)
-    v_beads_2nd_stage_list = getBeadsVolume2ndStageAllSamples(settings, positions_1st_stage_list)
-    
-    v_ethanol_1st_stage_list = getWashVolume(settings, 1)
-    v_ethanol_2nd_stage_list = getWashVolume(settings, 2)
-    v_eluent_list = getEluentVolume(settings)
-
-    pipetting_delay = returnPipettingDelay(settings)
-    
-    max_pipette_speed = returnMaxPipetteSpeed(settings)
-    beads_pipetting_speed = returnBeadsPipettingSpeed(settings)
-    ethanol_pipetting_speed = returnEthanolPipettingSpeed(settings)
-    eluent_pipetting_speed = returnEluentPipettingSpeed(settings)
-    
-    T_pull = returnProtocolParameter(settings, 'Beads pulling time after absorption') * 60.0
-    T_wash_1 = returnProtocolParameter(settings, 'First stage ethanol wash time') * 60.0
-    T_wash_2 = returnProtocolParameter(settings, 'Second stage ethanol wash time') * 60.0
-    T_dry = returnProtocolParameter(settings, 'Time to dry after ethanol wash') * 60.0
-    T_elute = returnProtocolParameter(settings, 'Elution time') * 60.0
 
     logging.info("This is the two-stage magnetic beads purification.")
     logging.info("It will remove any DNA and other molecules of too low and too high molecular weight.")
     logging.info("I will purify "+str(len(samples_list))+" samples")
-    logging.info("I will first use %s uL of magnetic beads for the long DNA cutoff, " % (v_beads_1st_stage_list, ))
-    logging.info("and then use %s uL of magnetic beads for the short DNA cutoff, " % (v_beads_2nd_stage_list, ))
-    logging.info("I will elute the resulting DNA with %s uL of eluent" % (v_eluent_list, ))
+    logging.info("I will first use %s uL of magnetic beads for the long DNA cutoff, " % (s.beads_vol_1st_stage_list, ))
+    logging.info("and then use %s uL of magnetic beads for the short DNA cutoff, " % (s.beads_vol_2nd_stage_list, ))
+    logging.info("I will elute the resulting DNA with %s uL of eluent" % (s.V_eluent, ))
     
     
     # Starting the physical protocol
@@ -1208,9 +1166,10 @@ def purifyTwoCutoffs(robot, settings):
     logging.info("------")
     logging.info("Starting the purification.")
     logging.info("------")
-    logging.info("Now adding the %s uL of magnetic beads to the corresponding samples for the long DNA cutoff..." % (v_beads_1st_stage_list, ))
-    timestamp_beads_added = addBeadsToAll(robot, samples_list, v_beads_1st_stage_list, beads,
-                                          pipetting_speed=beads_pipetting_speed, delay=pipetting_delay)
+    logging.info("Now adding the %s uL of magnetic beads to the corresponding samples for the long DNA cutoff..." % (s.beads_vol_1st_stage_list, ))
+    timestamp_beads_added = addBeadsToAll(robot, samples_list, s.beads_vol_1st_stage_list, beads,
+                                          pipetting_speed=s.beads_pipetting_speed, 
+                                          delay=s.pipetting_delay)
     logging.info("Beads added to the samples.")
     
     logging.info("Now waiting for the DNA absorption...")
@@ -1221,9 +1180,9 @@ def purifyTwoCutoffs(robot, settings):
     
     # Pulling beads to the side
     logging.info("Now pulling the beads towards the tube side")
-    logging.info("Waiting for %s seconds while the magnets are pulling beads to the side" % (T_pull, ))
+    logging.info("Waiting for %s seconds while the magnets are pulling beads to the side" % (s.T_pull, ))
     robot.moveMagnetsTowardsTube(poweroff=True)
-    time.sleep(T_pull)
+    time.sleep(s.T_pull)
     logging.info("Beads are now pulled to the side of the tubes.")
     
     # Transferring to the intermediary tubes
@@ -1238,9 +1197,10 @@ def purifyTwoCutoffs(robot, settings):
     
     # Second cutoff
     # -------------
-    logging.info("Now adding the %s uL of magnetic beads to the samples for the small molecule removal..." % (v_beads_2nd_stage_list, ))
-    timestamp_beads_added = addBeadsToAll(robot, intermediate_list, v_beads_2nd_stage_list, beads, 
-                                          pipetting_speed=beads_pipetting_speed, delay=pipetting_delay)
+    logging.info("Now adding the %s uL of magnetic beads to the samples for the small molecule removal..." % (s.beads_vol_2nd_stage_list, ))
+    timestamp_beads_added = addBeadsToAll(robot, intermediate_list, s.beads_vol_2nd_stage_list, beads, 
+                                          pipetting_speed=s.beads_pipetting_speed, 
+                                          delay=s.pipetting_delay)
     logging.info("Beads added to the samples.")
     
     # Extra mixing samples with magnetic beads during the protocol.
@@ -1251,17 +1211,17 @@ def purifyTwoCutoffs(robot, settings):
     # Pulling beads to the side
     logging.info("DNA absorption finished.")
     logging.info("Now pulling the beads towards the tube side")
-    logging.info("Waiting for %s seconds while the magnets are pulling beads to the side" % (T_pull, ))
+    logging.info("Waiting for %s seconds while the magnets are pulling beads to the side" % (s.T_pull, ))
     robot.moveMagnetsTowardsTube(poweroff=True)
-    time.sleep(T_pull)
+    time.sleep(s.T_pull)
     logging.info("Beads are now pulled to the side of the tubes.")
     
     # Removing supernatant (the desired DNA of larger molecular weight is on the beads)
-    ts = removeSupernatantAllSamples(robot, intermediate_list, waste, beads_pipetting_speed, 
-                                     fast=True, delay=pipetting_delay)
+    ts = removeSupernatantAllSamples(robot, intermediate_list, waste, s.beads_pipetting_speed, 
+                                     fast=True, delay=s.pipetting_delay)
     
     ethanolWash(robot, settings, intermediate_list, EtOH80pct, waste)
-    elution(robot, settings, intermediate_list, result_list, water)
+    elution(robot, s, intermediate_list, result_list, water)
     
     logging.info("Two-stage purification finished.")
     

@@ -147,8 +147,10 @@ class one_step_cutoff_test_case(unittest.TestCase):
     def test_transferSampleToSecondStage(self, mock_transferLiquid, mock_move,
             mock_pickUpNextTip, mock_dumpTipToWaste):
         
-        settings = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')
-        samples_list = ponec.initSamples(self.ber, settings)
+        filepath = r'.\tests\samplesheet_2stages__beads_vol.csv'
+        settings = ponec.loadSettings(filepath)
+        s = ponec.settings(filepath)
+        samples_list = ponec.initSamples(self.ber, s)
         intermediate_list = ponec.initIntermediate(self.ber, settings)
         sample = samples_list[0]
         intermediate = intermediate_list[0]
@@ -189,8 +191,10 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.ber.setSpeedPipette = mock_setSpeedPipette
         self.ber.setSpeedPipette = mock_moveMagnetsTowardsTube
         
-        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
-        ponec.purify_one_cutoff(self.ber, settings)
+        filepath = r'.\factory_default\samplesheet.csv'
+        settings = ponec.loadSettings(filepath)
+        s = ponec.settings(filepath)
+        ponec.purify_one_cutoff(self.ber, settings, s)
         
         mock_addBeadsToAll_first_call_first_arg = mock_addBeadsToAll.mock_calls[0][1][0]
         mock_addBeadsToAll_first_call_delay_arg = mock_addBeadsToAll.mock_calls[0][2]['delay']
@@ -216,8 +220,10 @@ class one_step_cutoff_test_case(unittest.TestCase):
         mock_add80PctEthanol, mock_waitAfterTimestamp, mock_eluteAllSamples,
         mock_separateEluateAllTubes, mock_sleep):
         
-        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
-        ponec.purify_one_cutoff(self.ber, settings)
+        filepath = r'.\factory_default\samplesheet.csv'
+        settings = ponec.loadSettings(filepath)
+        s = ponec.settings(filepath)
+        ponec.purify_one_cutoff(self.ber, settings, s)
         
         # Speed while pipetting beads in
         
@@ -337,11 +343,13 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.ber.moveMagnetsAway = mock_moveMagnetsAway
         self.ber.setSpeedPipette = mock_setSpeedPipette
         
-        settings = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')
-        samples_list = ponec.initSamples(self.ber, settings)
+        filepath = r'.\tests\samplesheet_2stages__beads_vol.csv'
+        settings = ponec.loadSettings(filepath) # TODO: delete
+        s = ponec.settings(filepath)
+        samples_list = ponec.initSamples(self.ber, s)
         beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
         
-        ponec.purifyTwoCutoffs(self.ber, settings)
+        ponec.purifyTwoCutoffs(self.ber, settings, s)
         
         # Volumes
         volume_list_received_at_first_AddBeadsToAll = mock_addBeadsToAll.mock_calls[0][1][2]
@@ -375,8 +383,10 @@ class one_step_cutoff_test_case(unittest.TestCase):
                          mock_removeSupernatantAllSamples,
                          ):
         # Loading necessary parameters
-        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
-        samples_list = ponec.initSamples(self.ber, settings)
+        filepath = r'.\factory_default\samplesheet.csv'
+        settings = ponec.loadSettings(filepath)
+        s = ponec.settings(filepath)
+        samples_list = ponec.initSamples(self.ber, s)
         beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
         
         # Running the function to be tested
@@ -444,13 +454,15 @@ class one_step_cutoff_test_case(unittest.TestCase):
                      mock_sleep,
                      ):
         # Loading necessary parameters
-        settings = ponec.loadSettings('.\\factory_default\\samplesheet.csv')
-        samples_list = ponec.initSamples(self.ber, settings)
+        filepath = r'.\factory_default\samplesheet.csv'
+        s = ponec.settings(filepath)
+        settings = ponec.loadSettings(filepath) # TODO: delete
+        samples_list = ponec.initSamples(self.ber, s)
         result_list = ponec.initResultTubes(self.ber, settings)
         beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
         
         # Running the function to be tested
-        ponec.elution(self.ber, settings, samples_list, result_list, water)
+        ponec.elution(self.ber, s, samples_list, result_list, water)
         
         # Function eluteAllSamples receives the right samples
         s1, s2, s3 = mock_eluteAllSamples.mock_calls[0][1][1]
