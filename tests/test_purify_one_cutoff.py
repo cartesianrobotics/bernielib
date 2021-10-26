@@ -26,25 +26,6 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         self.ber._writeAndWait = mock_writeAndWait
         
-        try:
-            self.settings_curr_1stage = ponec.loadSettings('samplesheet.csv')
-        except:
-            print("No one-stage settings file")
-        try:
-            self.settings_factdef_1stage = ponec.loadSettings(
-                                        '.\\factory_default\\samplesheet.csv')
-        except:
-            print("No factory default one-stage settings file")
-        try:
-            self.settings_curr_2stages = ponec.loadSettings('samplesheet_2stages.csv')
-        except:
-            print("No two-stages settings file")
-        try:
-            self.settings_factdef_2stages = ponec.loadSettings(
-                                        '.\\factory_default\\samplesheet_2stages.csv')
-        except:
-            print("No factory default two-stages settings file")
-        
 
     def tearDown(self):
         try:
@@ -59,87 +40,6 @@ class one_step_cutoff_test_case(unittest.TestCase):
         logging.disable(logging.NOTSET)
 
 
-    def test_getBeadsVolume(self):
-        settings_beads_vol = ponec.loadSettings('.\\tests\\test_samplesheet__beads_vol.csv')
-
-        v = ponec.getBeadsVolume(settings_beads_vol, 0)
-        self.assertEqual(v, 40)
-        v = ponec.getBeadsVolume(settings_beads_vol, 1)
-        self.assertEqual(v, 30)
-        
-        settings_beads_vol = ponec.loadSettings('.\\tests\\test_samplesheet__beads_vol_by_fraction.csv')
-        
-        v = ponec.getBeadsVolume(settings_beads_vol, 0)
-        self.assertEqual(v, 150)
-        v = ponec.getBeadsVolume(settings_beads_vol, 1)
-        self.assertEqual(v, 60)
-        v = ponec.getBeadsVolume(settings_beads_vol, 2)
-        self.assertEqual(v, 10)
-        
-        settings_beads_vol = ponec.loadSettings('.\\tests\\test_samplesheet__beads_vol_by_DNA_size.csv')
-        a, b, c = self.ber.getBeadsVolumeCoef()
-        frac_1000 = a + b / 1000.0 + c / 1000.0 ** 2
-        frac_600 = a + b / 600.0 + c / 600.0 ** 2
-        frac_150 = a + b / 150.0 + c / 150.0 ** 2
-        v_1000 = 100.0 * frac_1000
-        v_600 = 100.0 * frac_600
-        v_150 = 100.0 * frac_150
-        
-        v = ponec.getBeadsVolume(settings_beads_vol, 0)
-        self.assertEqual(v, v_1000)
-        v = ponec.getBeadsVolume(settings_beads_vol, 1)
-        self.assertEqual(v, v_600)
-        v = ponec.getBeadsVolume(settings_beads_vol, 2)
-        self.assertEqual(v, v_150)
-        
-        
-    def test_getBeadsVol2ndStage(self):
-        settings_beads_vol = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')
-        
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 0)
-        self.assertEqual(v, 140)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 1)
-        self.assertEqual(v, 110)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 2)
-        self.assertEqual(v, 67)
-        
-        settings_beads_vol = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol_by_fraction.csv')
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 0)
-        self.assertEqual(v, (1.5 - 80.0/100.0)*100.0)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 1)
-        self.assertEqual(v, (1.0 - 70.0/100.0)*100.0)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 2)
-        self.assertEqual(v, (0.7 - 60.0/100.0)*100.0)
-        
-        settings_beads_vol = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol_by_fraction2.csv')
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 0)
-        self.assertEqual(v, (1.5 - 0.4)*100.0)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 1)
-        self.assertEqual(v, (1.0 - 0.6)*100.0)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 2)
-        self.assertEqual(v, (0.7 - 0.5)*100.0)
-        
-        settings_beads_vol = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol_by_DNA_size.csv')
-        a, b, c = self.ber.getBeadsVolumeCoef()
-        frac_850 = a + b / 850.0 + c / 850.0 ** 2
-        frac_750 = a + b / 750.0 + c / 750.0 ** 2
-        frac_600 = a + b / 600.0 + c / 600.0 ** 2
-        frac_250 = a + b / 250.0 + c / 250.0 ** 2
-        frac_150 = a + b / 150.0 + c / 150.0 ** 2
-        frac_300 = a + b / 300.0 + c / 300.0 ** 2
-        frac_2nd_stage_0 = frac_250 - frac_850
-        frac_2nd_stage_1 = frac_150 - frac_750
-        frac_2nd_stage_2 = frac_300 - frac_600
-        v_2nd_stage_0 = 100.0 * frac_2nd_stage_0
-        v_2nd_stage_1 = 100.0 * frac_2nd_stage_1
-        v_2nd_stage_2 = 100.0 * frac_2nd_stage_2
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 0)
-        self.assertEqual(v, v_2nd_stage_0)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 1)
-        self.assertEqual(v, v_2nd_stage_1)
-        v = ponec.getBeadsVolume2ndStage(settings_beads_vol, 2)
-        self.assertEqual(v, v_2nd_stage_2)
-
     @patch('purify.bl.robot.dumpTipToWaste')
     @patch('purify.bl.robot.pickUpNextTip')
     @patch('purify.bl.robot.move')
@@ -148,10 +48,9 @@ class one_step_cutoff_test_case(unittest.TestCase):
             mock_pickUpNextTip, mock_dumpTipToWaste):
         
         filepath = r'.\tests\samplesheet_2stages__beads_vol.csv'
-        settings = ponec.loadSettings(filepath)
         s = ponec.settings(filepath)
         samples_list = ponec.initSamples(self.ber, s)
-        intermediate_list = ponec.initIntermediate(self.ber, settings)
+        intermediate_list = ponec.initIntermediate(self.ber, s)
         sample = samples_list[0]
         intermediate = intermediate_list[0]
         
@@ -192,9 +91,8 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.ber.setSpeedPipette = mock_moveMagnetsTowardsTube
         
         filepath = r'.\factory_default\samplesheet.csv'
-        settings = ponec.loadSettings(filepath)
         s = ponec.settings(filepath)
-        ponec.purify_one_cutoff(self.ber, settings, s)
+        ponec.purify_one_cutoff(self.ber, s)
         
         mock_addBeadsToAll_first_call_first_arg = mock_addBeadsToAll.mock_calls[0][1][0]
         mock_addBeadsToAll_first_call_delay_arg = mock_addBeadsToAll.mock_calls[0][2]['delay']
@@ -221,9 +119,8 @@ class one_step_cutoff_test_case(unittest.TestCase):
         mock_separateEluateAllTubes, mock_sleep):
         
         filepath = r'.\factory_default\samplesheet.csv'
-        settings = ponec.loadSettings(filepath)
         s = ponec.settings(filepath)
-        ponec.purify_one_cutoff(self.ber, settings, s)
+        ponec.purify_one_cutoff(self.ber, s)
         
         # Speed while pipetting beads in
         
@@ -344,12 +241,11 @@ class one_step_cutoff_test_case(unittest.TestCase):
         self.ber.setSpeedPipette = mock_setSpeedPipette
         
         filepath = r'.\tests\samplesheet_2stages__beads_vol.csv'
-        settings = ponec.loadSettings(filepath) # TODO: delete
         s = ponec.settings(filepath)
         samples_list = ponec.initSamples(self.ber, s)
-        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
+        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, s)
         
-        ponec.purifyTwoCutoffs(self.ber, settings, s)
+        ponec.purifyTwoCutoffs(self.ber, s)
         
         # Volumes
         volume_list_received_at_first_AddBeadsToAll = mock_addBeadsToAll.mock_calls[0][1][2]
@@ -384,13 +280,12 @@ class one_step_cutoff_test_case(unittest.TestCase):
                          ):
         # Loading necessary parameters
         filepath = r'.\factory_default\samplesheet.csv'
-        settings = ponec.loadSettings(filepath)
         s = ponec.settings(filepath)
         samples_list = ponec.initSamples(self.ber, s)
-        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
+        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, s)
         
         # Running the function to be tested
-        ponec.ethanolWash(self.ber, settings, samples_list, EtOH80pct, waste)
+        ponec.ethanolWash(self.ber, s, samples_list, EtOH80pct, waste)
         
         # Making sure the reagents (ethanol and waste) are where they should be
         ethanol_obj_provided_to_1st_add80PctEthanol = mock_add80PctEthanol.mock_calls[0][1][2]
@@ -456,10 +351,9 @@ class one_step_cutoff_test_case(unittest.TestCase):
         # Loading necessary parameters
         filepath = r'.\factory_default\samplesheet.csv'
         s = ponec.settings(filepath)
-        settings = ponec.loadSettings(filepath) # TODO: delete
         samples_list = ponec.initSamples(self.ber, s)
-        result_list = ponec.initResultTubes(self.ber, settings)
-        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, settings)
+        result_list = ponec.initResultTubes(self.ber, s)
+        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, s)
         
         # Running the function to be tested
         ponec.elution(self.ber, s, samples_list, result_list, water)
@@ -483,56 +377,13 @@ class one_step_cutoff_test_case(unittest.TestCase):
     
 
     def test_initIntermediate(self):
-        settings = ponec.loadSettings('.\\tests\\samplesheet_2stages__beads_vol.csv')
-        
+        settings = ponec.settings(r'.\tests\samplesheet_2stages__beads_vol.csv')
         intermediate_samples_list = ponec.initIntermediate(self.ber, settings)
         
         self.assertEqual(intermediate_samples_list[0].getWell(), (1, 6))
         self.assertEqual(intermediate_samples_list[1].getWell(), (1, 7))
         self.assertEqual(intermediate_samples_list[2].getWell(), (1, 8))
         
-    
-    def test_returnTipRackType(self):
-        self.setting_test_factory_default('old', ponec.returnTipRackType)
-    
-    def test_returnLoadCellPort(self):
-        self.setting_test_factory_default(None, ponec.returnLoadCellPort)
-    
-    def test_returnCartesianPort(self):
-        self.setting_test_factory_default(None, ponec.returnCartesianPort)
-    
-    def test_decideCutoffNumber(self):
-        self.setting_test_universal_function(1, ponec.decideCutoffNumber, 
-                                        self.settings_factdef_1stage)
-        self.setting_test_universal_function(2, ponec.decideCutoffNumber, 
-                                        self.settings_factdef_2stages)
-    
-    def test_returnPipettingDelay(self):
-        self.setting_test_factory_default(1, ponec.returnPipettingDelay)
-        
-    def test_returnMaxPipetteSpeed(self):
-        self.setting_test_factory_default(2500, ponec.returnMaxPipetteSpeed)
-
-    def test_returnBeadsPipettingSpeed(self):
-        self.setting_test_factory_default(1500, ponec.returnBeadsPipettingSpeed)
-
-    def test_returnEthanolPipettingSpeed(self):
-        self.setting_test_factory_default(2000, ponec.returnEthanolPipettingSpeed)
-        
-    def test_returnEluentPipettingSpeed(self):
-        self.setting_test_factory_default(1800, ponec.returnEluentPipettingSpeed)
-
-    def setting_test_factory_default(self, expected_param, param_return_func):
-        self.setting_test_universal_function(expected_param, param_return_func, 
-                                             self.settings_factdef_1stage)
-        self.setting_test_universal_function(expected_param, param_return_func, 
-                                             self.settings_factdef_2stages)
-        
-        
-    def setting_test_universal_function(self, expected_parameter, 
-                                        parameter_returning_function, *args):
-        parameter = parameter_returning_function(*args)
-        self.assertEqual(parameter, expected_parameter)
         
     
     

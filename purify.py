@@ -319,115 +319,6 @@ def printHowToUse():
     logging.info("")
 
 
-# Functions for loading and handling the purification settings
-# ===========================================================================================
-
-def loadSettings(filepath):
-    logging.debug("Opening settings file %s" % (filepath, ))
-    try:
-        with open(filepath, mode='r') as csv_file:
-            csv_reader = csv.DictReader(csv_file)
-            content = list(csv_reader)
-        logging.debug("Settings file successfully opened.")
-        return content
-    except:
-        logging.error("Failed to import the samplesheet file with the experiment settings.")
-        sys.exit("Script terminated")
-        
-def getRowWithParameter(content, desired_parameter):
-    for row in content:
-        current_parameter = row['Parameters']
-        if current_parameter == desired_parameter:
-            return row
-
-def positionsToPurify(content):
-    positions_list = []
-    row = getRowWithParameter(content, 'Initial sample volume')
-    for position in range(12):
-        if float(row[str(position)]) > 0:
-            positions_list.append(position)
-    return positions_list
-
-def positionsToPurify2ndStage(content):
-    sample_positions_list = positionsToPurify(content)
-    pos_2nd_stage_list = []
-    for position in sample_positions_list:
-        pos_2nd_stage = position + 6
-        pos_2nd_stage_list.append(pos_2nd_stage)
-    return pos_2nd_stage_list
-
-def returnSampleParameter(settings, param, position):
-    try:
-        row = getRowWithParameter(settings, param)
-    except:
-        logging.error("A critical parameter %s is not in the samplesheet file." % (param, ))
-        logging.error("Please edit your samplesheet and try again.")
-        sys.exit("Script terminated.")
-    try:
-        value = row[str(position)]
-    except:
-        logging.error("A position number %s in the parameter %s is not in the sample sheet." % (position, param, ))
-        logging.error("Please correct your samplesheet and try again.")
-        sys.exit("Script terminated.")
-    try:
-        value = float(value)
-    except:
-        pass
-    return value    
-
-def returnProtocolParameter(settings, param):
-    return returnSampleParameter(settings, param, '0')
-
-
-# Protocol-wide settings
-# ===========================================================================================
-
-def returnTipRackType(settings):
-    """
-    Returns the tip rack type. Used to properly initialize the robot.
-    """
-    return returnProtocolParameter(settings, 'Tip Rack Type')
-    
-def returnLoadCellPort(settings):
-    """
-    Returns the port name for the load cell controller (Arduino metro mini)
-    """
-    value = returnProtocolParameter(settings, 'Load cells controller port')
-    if value == 'auto':
-        return None
-    else:
-        return value
-
-def returnCartesianPort(settings):
-    """
-    Returns the port name for the cartesian controller (smoothieboard)
-    """
-    value = returnProtocolParameter(settings, 'Cartesian controller port')
-    if value == 'auto':
-        return None
-    else:
-        return value
-
-def decideCutoffNumber(settings):
-    return returnProtocolParameter(settings, 'Number of cutoffs')
-
-
-def returnPipettingDelay(settings):
-    return returnProtocolParameter(settings, 'Delay after pipetting')
-
-def returnMaxPipetteSpeed(settings):
-    return returnProtocolParameter(settings, 'Maximum pipetting speed')
-    
-def returnBeadsPipettingSpeed(settings):
-    return returnProtocolParameter(settings, 'Beads pipetting speed')
-    
-def returnEthanolPipettingSpeed(settings):
-    return returnProtocolParameter(settings, 'Ethanol pipetting speed')
-    
-def returnEluentPipettingSpeed(settings):
-    return returnProtocolParameter(settings, 'Eluent pipetting speed')
-
-
 # Functions samples and tubes initialization
 # ===========================================================================================
 
@@ -435,22 +326,24 @@ def initSamples(robot, settings):
     return bl.createSamplesToPurifyList(robot, settings.initial_sample_vol_list)
 
 def initIntermediate(robot, settings):
-    samples_positions_list = positionsToPurify(settings)
-    number_of_samples = len(samples_positions_list)
-    
-    # Initializing sample instances
-    intermediate_list = bl.createSamplesToPurifyList(robot, number_of_tubes=number_of_samples, 
-                                                     start_from_position=6)
-    return intermediate_list                                                 
+    return bl.createSamplesToPurifyList(robot, number_of_tubes=settings.number_of_samples, 
+                                                     start_from_position=6)  
     
 
 def initResultTubes(robot, settings):
-    # Getting list of positions at which samples are placed
-    samples_positions_list = positionsToPurify(settings)
-    N_samples = len(samples_positions_list) # Number of samples
-    # Initializing results tube instances
-    result_list = bl.createPurifiedSamplesList(robot, N_samples)
-    return result_list
+    return bl.createPurifiedSamplesList(robot, settings.number_of_samples)
+
+
+def chooseRobotRackInstance(robot, rack_name, sample_rack_allowed=False, 
+                            reagents_rack_allowed=True):
+    if rack_name == 'samples' and sample_rack_allowed:
+        return robot.samples.rack
+    elif rack_name == 'reagents' and reagents_rack_allowed:
+        return robot.reagents_rack
+    else:
+        logging.error("There is no rack with the name '%s' or this type of rack is not allowed for the sample." % rack_name)
+        return
+
 
 def initReagents(robot, settings):
     """
@@ -460,210 +353,51 @@ def initReagents(robot, settings):
     """
     
     # Beads tube settings
-    beads_tube_type = returnProtocolParameter(settings, 'Beads tube type')
-    beads_rack_name = returnProtocolParameter(settings, 'Beads tube rack')
-    if beads_rack_name == 'samples':
-        beads_rack = robot.samples_rack
-    elif beads_rack_name == 'reagents':
-        beads_rack = robot.reagents_rack
-    else:
+    beads_rack = chooseRobotRackInstance(robot, settings.beads_rack_name, sample_rack_allowed=True)
+    if beads_rack is None:
         logging.error("initReagents: Wrong Beads tube rack specified in the samplesheet file.")
-        return
-    beads_col = int(returnProtocolParameter(settings, 'Beads tube column'))
-    beads_row = int(returnProtocolParameter(settings, 'Beads tube well'))
-    V_avail_beads = returnProtocolParameter(settings, 'Beads initial volume')
+        #return 
     
     # Initializing beads tube
-    beads_tube = bl.createSample(beads_tube_type, 'beads', beads_rack, beads_col, beads_row, V_avail_beads)
-
+    beads_tube = bl.createSample(settings.beads_tube_type, 
+        'beads', beads_rack, settings.beads_column_in_rack, settings.beads_row_in_rack,
+        settings.V_beads)
     
     # -------------------
     # Waste tube settings
-    waste_tube_type = returnProtocolParameter(settings, 'Waste tube type')
-    waste_rack_name = returnProtocolParameter(settings, 'Waste tube rack')
-    if waste_rack_name == 'reagents':
-        waste_rack = robot.reagents_rack
-    else:
+    waste_rack = chooseRobotRackInstance(robot, settings.waste_rack_name)
+    if waste_rack is None:
         logging.error("initReagents: Wrong waste tube rack specified in the samplesheet file.")
-        return
-    waste_col = 0
-    waste_row = int(returnProtocolParameter(settings, 'Waste tube position'))
-    V_waste = returnProtocolParameter(settings, 'Waste volume')
+        #return
     
     # Initializing waste tube
-    waste_tube = bl.createSample(waste_tube_type, 'liquid_waste', waste_rack, waste_col, waste_row, V_waste)
+    waste_tube = bl.createSample(settings.waste_tube_type, 'liquid_waste', 
+        waste_rack, settings.waste_column_in_rack, settings.waste_row_in_rack, 
+        settings.V_waste)
 
-    
     # -------------------
     # Eluent tube settings
-    eluent_tube_type = returnProtocolParameter(settings, 'Eluent tube type')
-    eluent_rack_name = returnProtocolParameter(settings, 'Eluent tube rack')
-    if eluent_rack_name == 'reagents':
-        eluent_rack = robot.reagents_rack
-    else:
+    eluent_rack = chooseRobotRackInstance(robot, settings.eluent_rack_name)
+    if eluent_rack is None:
         logging.error("initReagents: Wrong Eluent tube rack specified in the samplesheet file.")
-        return
-    eluent_col = 0
-    eluent_row = int(returnProtocolParameter(settings, 'Eluent tube position'))
-    V_avail_eluent = returnProtocolParameter(settings, 'Eluent volume')
-    
+        #return
     # Initializing eluent tube
-    eluent_tube = bl.createSample(eluent_tube_type, 'eluent', eluent_rack, eluent_col, eluent_row, V_avail_eluent)
+    eluent_tube = bl.createSample(settings.eluent_tube_type, 'eluent', 
+                    eluent_rack, settings.eluent_column_in_rack, 
+                    settings.eluent_row_in_rack, settings.V_eluent)
 
-    
     # -------------------
     # Ethanol tube settings
-    ethanol_tube_type = returnProtocolParameter(settings, 'Ethanol tube type')
-    ethanol_rack_name = returnProtocolParameter(settings, 'Ethanol tube rack')
-    if ethanol_rack_name == 'reagents':
-        ethanol_rack = robot.reagents_rack
-    else:
+    ethanol_rack = chooseRobotRackInstance(robot, settings.ethanol_rack_name)
+    if ethanol_rack is None:
         logging.error("initReagents: Wrong Ethanol tube rack specified in the samplesheet file.")
-        return
-    ethanol_col = 0
-    ethanol_row = int(returnProtocolParameter(settings, 'Ethanol tube position'))
-    V_avail_ethanol = returnProtocolParameter(settings, 'Ethanol volume')    
+        #return 
     
-    ethanol80_tube = bl.createSample(ethanol_tube_type, 'EtOH80pct', ethanol_rack, ethanol_col, ethanol_row, V_avail_ethanol)
+    ethanol80_tube = bl.createSample(settings.ethanol_tube_type, 'EtOH80pct', 
+                        ethanol_rack, settings.ethanol_column_in_rack, 
+                        settings.ethanol_row_in_rack, settings.V_ethanol)
     
     return beads_tube, waste_tube, eluent_tube, ethanol80_tube
-
-
-
-
-# Beads volume calculations
-# ===========================================================================================
-
-def getBeadsVolume(settings, position,
-                   beads_vol_param_name='Beads volume',
-                   beads_frac_param_name='Fraction',
-                   dna_size_cutoff_param_name='DNA size cutoff',
-                   initial_sample_vol_param_name='Initial sample volume',
-                   ):
-    # Importing all possible parameters
-    beads_volume = returnSampleParameter(settings, beads_vol_param_name, position)
-    beads_volume_fraction = returnSampleParameter(settings, beads_frac_param_name, position)
-    dna_size_cutoff = returnSampleParameter(settings, dna_size_cutoff_param_name, position)
-    init_sample_vol = returnSampleParameter(settings, initial_sample_vol_param_name, position)
-    
-    # Deciding which one to use
-    if beads_volume > 0:
-        use_beads_volume = beads_volume
-    elif beads_volume <= 0 and beads_volume_fraction > 0:
-        # If the beads volumes are not explicitly provided, use the volume multiplier (fraction)
-        use_beads_volume = init_sample_vol * beads_volume_fraction
-    elif beads_volume <= 0 and beads_volume_fraction <= 0 and dna_size_cutoff > 0:
-        # Approximation using the beads manufacturer data
-        # Using if neither beads volume, nor beads volume multiplier are explicitly provided.
-        # Getting polynome coefficients
-        a, b, c = bl.getBeadsVolumeCoef()
-        # Calculating volume multiplier (fraction)
-        multiplier = a + b / dna_size_cutoff + c / dna_size_cutoff ** 2
-        use_beads_volume = init_sample_vol * multiplier
-    else:
-        logging.warning("getBeadsVolume: No beads volume provided in the samplesheet.")
-        logging.warning("Sample position %s" % (position, ))
-        use_beads_volume = 0
-    return use_beads_volume    
-
-def getBeadsVolumesForAllSamples(settings, positions_list):
-    beads_vol_list = []
-    for position in positions_list:
-        v = getBeadsVolume(settings, position)
-        beads_vol_list.append(v)
-        logging.debug("Sample at position %s will receive %s uL of magnetic beads." % (position, v, ))
-    return beads_vol_list
-
-
-def getBeadsVolume1stStage(settings, position):
-    # Will return the volume of beads to perform an upper DNA cutoff, or the first stage of the
-    # purification
-    return getBeadsVolume(settings, position,
-                          beads_vol_param_name='Beads volume upper cutoff',
-                          beads_frac_param_name='Fraction upper cutoff',
-                          dna_size_cutoff_param_name='DNA size upper cutoff',
-                          )
-
-
-def getBeadsVolume1stStageAllSamples(settings, positions_list):
-    v_list = []
-    for position in positions_list:
-        v = getBeadsVolume1stStage(settings, position)
-        v_list.append(v)
-        logging.debug("Sample at position %s will receive %s uL of magnetic beads." % (position, v, ))
-    return v_list
-
-def getBeadsVolume2ndStage(settings, position):
-    """
-    Will return the volume of the beads to perform smaller DNA cutoff, or the second stage of the
-    purification.
-    """
-    beads_volume_2nd_stage = returnSampleParameter(settings, 'Beads volume', position)
-    beads_vol_frac_2nd_stage = returnSampleParameter(settings, 'Fraction', position)
-    dna_size_cutoff_2nd_stage = returnSampleParameter(settings, 'DNA size cutoff', position)
-    
-    v1 = getBeadsVolume1stStage(settings, position)
-    init_sample_vol = returnSampleParameter(settings, 'Initial sample volume', position)
-    beads_vol_frac_1st_stage = v1 / (init_sample_vol*1.0)
-    
-    # Deciding the parameter to use for the 2nd stage
-    if beads_volume_2nd_stage > 0:
-        v2 = beads_volume_2nd_stage
-    elif beads_volume_2nd_stage <= 0 and beads_vol_frac_2nd_stage > 0:
-        real_fraction = beads_vol_frac_2nd_stage - beads_vol_frac_1st_stage
-        v2 = real_fraction * init_sample_vol
-    elif beads_volume_2nd_stage <= 0 and beads_vol_frac_2nd_stage <= 0 and dna_size_cutoff_2nd_stage > 0:
-        # Approximation using the beads manufacturer data
-        # Using if neither beads volume, nor beads volume multiplier are explicitly provided.
-        # Getting polynome coefficients
-        a, b, c = bl.getBeadsVolumeCoef()
-        # Calculating volume multiplier (fraction)
-        beads_vol_frac_2nd_stage = a + b / dna_size_cutoff_2nd_stage + c / dna_size_cutoff_2nd_stage ** 2
-        real_fraction = beads_vol_frac_2nd_stage - beads_vol_frac_1st_stage
-        v2 = real_fraction * init_sample_vol
-    else:
-        logging.warning("getBeadsVolume2ndStage: No beads volume for the 2nd cutoff provided in the samplesheet.")
-        logging.warning("Sample position %s" % (position, ))
-        v2 = 0
-    return v2
-
-def getBeadsVolume2ndStageAllSamples(settings, positions_list):
-    v_list = []
-    for position in positions_list:
-        v = getBeadsVolume2ndStage(settings, position)
-        v_list.append(v)
-        logging.debug("Sample at position %s will receive %s uL of magnetic beads during the second stage of the purification." % (position, v, ))
-    return v_list
-
-
-# Ethanol wash volumes
-# ===========================================================================================
-
-def getWashVolume(settings, stage):
-    vol_list = []
-    samples_positions_list = positionsToPurify(settings)
-    if stage == 1:
-        parameter_name = 'First stage ethanol wash volume'
-    elif stage == 2:
-        parameter_name = 'Second stage ethanol wash volume'
-    else:
-        parameter_name = 'First stage ethanol wash volume'
-    for position in samples_positions_list:
-        volume = returnSampleParameter(settings, parameter_name, position)
-        vol_list.append(volume)
-    return vol_list
-
-
-# Eluent volumes
-# ===========================================================================================
-
-def getEluentVolume(settings):
-    samples_positions_list = positionsToPurify(settings)
-    vol_list = []
-    for position in samples_positions_list:
-        volume = returnSampleParameter(settings, 'Elution volume', position)
-        vol_list.append(volume)
-    return vol_list
 
 
 
@@ -866,58 +600,39 @@ def add80PctEthanol(robot, samples_list, ethanol, volume_list, z_safe=50, delay=
 
 def ethanolWash(robot, settings, samples_list, EtOH80pct, waste):
     
-    # Loading ethanol volumes for the both stages.
-    v_ethanol_1st_stage_list = getWashVolume(settings, 1)
-    v_ethanol_2nd_stage_list = getWashVolume(settings, 2)
-    
-    # Loading times for how long to wait for ethanol incubation.
-    T_wash_1 = returnProtocolParameter(settings, 'First stage ethanol wash time') * 60.0
-    T_wash_2 = returnProtocolParameter(settings, 'Second stage ethanol wash time') * 60.0
-    T_dry = returnProtocolParameter(settings, 'Time to dry after ethanol wash') * 60.0
-    
-    # Delay at the end of the pipetting
-    pipetting_delay = returnPipettingDelay(settings)
-    
-    # Loading settings for the speed of plunger movement for ethanol pipetting.
-    ethanol_pipetting_speed = returnEthanolPipettingSpeed(settings)
-    max_pipette_speed = returnMaxPipetteSpeed(settings)
-    
     # 1st stage ethanol wash
     logging.info("Now performing two ethanol washes.")
     logging.info("Wash-1: Now adding 80% ethanol to all the samples...")
     # Setting the pipette speed for the less viscous ethanol solution
-    #robot.setSpeedPipette(ethanol_pipetting_speed)
     timestamp_ethanol_added = add80PctEthanol(robot, samples_list, EtOH80pct, 
-                                              v_ethanol_1st_stage_list, delay=pipetting_delay)
+            settings.wash_1_vol_list, delay=settings.pipetting_delay)
     logging.info("Wash-1: 80% ethanol added to all tubes.")
-    logging.info("Wash-1: Now incubating the samples for %s seconds..." % (T_wash_1, ))
-    waitAfterTimestamp(timestamp_ethanol_added, T_wash_1)
+    logging.info("Wash-1: Now incubating the samples for %s seconds..." % (settings.T_wash_1, ))
+    waitAfterTimestamp(timestamp_ethanol_added, settings.T_wash_1)
     logging.info("Wash-1: Ethanol incubation finished.")
     logging.info("Wash-1: Now removing ethanol from the sample tubes...")
-    ts = removeSupernatantAllSamples(robot, samples_list, waste, ethanol_pipetting_speed, 
-                                     fast=True, delay=pipetting_delay)
+    ts = removeSupernatantAllSamples(robot, samples_list, waste, 
+            settings.ethanol_pipetting_speed, fast=True, delay=settings.pipetting_delay)
     logging.info("Wash-1: Ethanol removed from all the samples.")
     
     # 2nd stage ethanol wash
     logging.info("Now proceeding to the second ethanol wash.")
     logging.info("Wash-2: Now adding 80% ethanol to all the samples...")
     timestamp_ethanol_added = add80PctEthanol(robot, samples_list, EtOH80pct, 
-                                              v_ethanol_2nd_stage_list, delay=pipetting_delay)
+            settings.wash_2_vol_list, delay=settings.pipetting_delay)
     logging.info("Wash-2: 80% ethanol added to all tubes.")
-    logging.info("Wash-2: Now incubating the samples for %s seconds..." % (T_wash_2, ))
-    waitAfterTimestamp(timestamp_ethanol_added, T_wash_2)
+    logging.info("Wash-2: Now incubating the samples for %s seconds..." % (settings.T_wash_2, ))
+    waitAfterTimestamp(timestamp_ethanol_added, settings.T_wash_2)
     logging.info("Wash-2: Ethanol incubation finished.")
     logging.info("Wash-2: Now removing ethanol from the sample tubes...")
     timestamp_ethanol_removed = removeSupernatantAllSamples(robot, samples_list, 
-                                                            waste, ethanol_pipetting_speed, 
-                                                            delay=pipetting_delay)
+            waste, settings.ethanol_pipetting_speed, delay=settings.pipetting_delay)
     logging.info("Wash-2: Ethanol removed from all the samples.")
     logging.info("Ethanol washes complete.")
-    #robot.setSpeedPipette(max_pipette_speed) # Resetting the max pipette speed
     
     # Drying ethanol
-    logging.info("Now drying the samples from the remaining ethanol for %s minutes..." % ((T_dry/60.0), ))
-    waitAfterTimestamp(timestamp_ethanol_removed, T_dry)
+    logging.info("Now drying the samples from the remaining ethanol for %s minutes..." % ((settings.T_dry/60.0), ))
+    waitAfterTimestamp(timestamp_ethanol_removed, settings.T_dry)
     logging.info("Ethanol drying finished.")    
 
 
@@ -1085,17 +800,17 @@ def elution(robot, settings, samples_list, result_list, water):
     robot.setSpeedPipette(s.default_pipette_speed) # Resetting the max pipette speed
 
 
-def purify_one_cutoff(robot, settings, settings_obj):
+def purify_one_cutoff(robot, settings):
     """
     TODO: settings_obj is a temporary parameter. Goal is to replace settings -> settings_obj
     Functions for 1-cutoff purification, that removes lower length DNA.
     Call this function to perform an entire purification
     """
-    s = settings_obj
+    s = settings
     # Loading settings
     samples_list = initSamples(robot, s)
-    result_list = initResultTubes(robot, settings)
-    beads, waste, water, EtOH80pct = initReagents(robot, settings)
+    result_list = initResultTubes(robot, s)
+    beads, waste, water, EtOH80pct = initReagents(robot, s)
     
     logging.info("This is the one-stage magnetic beads purification.")
     logging.info("It will remove any DNA and other molecules of low molecular weight.")
@@ -1113,7 +828,7 @@ def purify_one_cutoff(robot, settings, settings_obj):
     
     
     # Extra mixing samples with magnetic beads during the protocol.
-    mixManySamples(robot, samples_list, timestamp_beads_added, settings)
+    mixManySamples(robot, samples_list, timestamp_beads_added, s)
     
     # Pulling beads to the side
     logging.info("DNA absorption complete.")
@@ -1130,7 +845,7 @@ def purify_one_cutoff(robot, settings, settings_obj):
     logging.info("Supernatant removed from all the tubes.")
     
     # Ethanol wash.
-    ethanolWash(robot, settings, samples_list, EtOH80pct, waste)
+    ethanolWash(robot, s, samples_list, EtOH80pct, waste)
 
     # Elution
     elution(robot, s, samples_list, result_list, water)
@@ -1138,18 +853,18 @@ def purify_one_cutoff(robot, settings, settings_obj):
     logging.info("One-stage purification finished.")
     
 
-def purifyTwoCutoffs(robot, settings, settings_obj):
+def purifyTwoCutoffs(robot, settings):
     """
     TODO: settings_obj is a temporary parameter. Goal is to replace settings -> settings_obj
     Performs two-cutoffs purification; removing shorter and longer DNA.
     Call this function to perform entire purification
     """
     # Loading settings
-    s = settings_obj
+    s = settings
     samples_list = initSamples(robot, s)
-    intermediate_list = initIntermediate(robot, settings) # Tubes at which the 2nd stage is performed.
-    result_list = initResultTubes(robot, settings)
-    beads, waste, water, EtOH80pct = initReagents(robot, settings)
+    intermediate_list = initIntermediate(robot, s) # Tubes at which the 2nd stage is performed.
+    result_list = initResultTubes(robot, s)
+    beads, waste, water, EtOH80pct = initReagents(robot, s)
 
     logging.info("This is the two-stage magnetic beads purification.")
     logging.info("It will remove any DNA and other molecules of too low and too high molecular weight.")
@@ -1174,7 +889,7 @@ def purifyTwoCutoffs(robot, settings, settings_obj):
     
     logging.info("Now waiting for the DNA absorption...")
     # Extra mixing samples with magnetic beads during the protocol.
-    mixManySamples(robot, samples_list, timestamp_beads_added, settings)
+    mixManySamples(robot, samples_list, timestamp_beads_added, s)
     logging.info("DNA absorption finished.")
     
     
@@ -1205,7 +920,7 @@ def purifyTwoCutoffs(robot, settings, settings_obj):
     
     # Extra mixing samples with magnetic beads during the protocol.
     logging.info("Now waiting for the DNA absorption...")
-    mixManySamples(robot, intermediate_list, timestamp_beads_added, settings)
+    mixManySamples(robot, intermediate_list, timestamp_beads_added, s)
     logging.info("DNA absorption finished.")
     
     # Pulling beads to the side
@@ -1220,7 +935,7 @@ def purifyTwoCutoffs(robot, settings, settings_obj):
     ts = removeSupernatantAllSamples(robot, intermediate_list, waste, s.beads_pipetting_speed, 
                                      fast=True, delay=s.pipetting_delay)
     
-    ethanolWash(robot, settings, intermediate_list, EtOH80pct, waste)
+    ethanolWash(robot, s, intermediate_list, EtOH80pct, waste)
     elution(robot, s, intermediate_list, result_list, water)
     
     logging.info("Two-stage purification finished.")
