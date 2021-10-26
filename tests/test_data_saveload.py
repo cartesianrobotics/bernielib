@@ -33,13 +33,15 @@ class settings_test_case(unittest.TestCase):
         f.write(json.dumps(mock_data))
         f.close()
         
+        self.factory_default_test_dir = './factory_default_for_test_purposes/'
+        
         try:
-            os.mkdir('./factory_default_for_test_purposes/')
+            os.mkdir(self.factory_default_test_dir)
         except:
             pass
             
-        
-        f = open('./factory_default_for_test_purposes/'+self.name+'.json', 'w')
+        self.setting_path = self.factory_default_test_dir + self.name + '.json'
+        f = open(self.setting_path, 'w')
         f.write(json.dumps(mock_factory_data))
         f.close()
         
@@ -75,7 +77,7 @@ class settings_test_case(unittest.TestCase):
 
     def test__loadFactoryDefault(self):
         # For the test purpose, replacing the real factory default path with the mock one.
-        self.dummy_obj.factory_default_path = './factory_default_for_test_purposes/'+self.name+'.json'
+        self.dummy_obj.factory_default_path = self.setting_path
         data = self.dummy_obj.loadFactoryDefault()
         expected_data = {
             'the_other_settings': 22,
@@ -88,7 +90,7 @@ class settings_test_case(unittest.TestCase):
         
     def test__request_setting_that_are_only_in_factory_defaults(self):
         # For the test purpose, replacing the real factory default path with the mock one.
-        self.dummy_obj.factory_default_path = './factory_default_for_test_purposes/'+self.name+'.json'
+        self.dummy_obj.factory_default_path = self.setting_path
         self.assertFalse(self.dummy_obj._settingPresent('setting_only_in_factory_default'))
         self.assertEqual(self.dummy_obj._getSetting('setting_only_in_factory_default'), 19)
         # After the program attempts to get a setting that is only present in factory defaults,
@@ -97,7 +99,7 @@ class settings_test_case(unittest.TestCase):
         
 
     def test__internal_factory_default_mock_exist(self):
-        self.assertTrue(os.path.exists('./factory_default_for_test_purposes/'+self.name+'.json'))
+        self.assertTrue(os.path.exists(self.setting_path))
 
     
     def tearDown(self):
@@ -110,11 +112,11 @@ class settings_test_case(unittest.TestCase):
         except:
             pass
         try:
-            os.remove('./factory_default_for_test_purposes/'+self.name+'.json')
+            os.remove(self.setting_path)
         except:
             pass
         try:
-            os.rmdir('./factory_default_for_test_purposes/')
+            os.rmdir(self.factory_default_test_dir)
         except:
             pass
         logging.disable(logging.NOTSET)

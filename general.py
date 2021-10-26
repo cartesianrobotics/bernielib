@@ -33,8 +33,8 @@ def listSerialPorts():
         except (OSError, serial.SerialException):
             pass
     return result
-    
-    
+
+
 class data():
     """
     Handles data input and output

@@ -11,11 +11,10 @@ from mock import patch
 class bernielib_test_case(unittest.TestCase):
     
     
+    @patch('time.sleep')
     @patch('purify.bl.time.sleep')
-    @patch('purify.bl.serial.Serial')
-    def setUp(self, mock_serial, mock_sleep):
-        #bl.time.sleep = mock.MagicMock()
-        #bl.serial.Serial = mock.MagicMock()
+    @patch('serial.Serial')
+    def setUp(self, mock_serial, mock_sleep, mock_sleep2):
         logging.disable(logging.CRITICAL)
         self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         self.sample_type = 'test_sample_type'

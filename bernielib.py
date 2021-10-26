@@ -1422,15 +1422,12 @@ class robot(data):
         self._setSetting('DNAsize_to_Vbeads', {'a': a, 'b': b, 'c': c})
         
     def getBeadsVolumeCoef(self):
-        coef_dict = self._getSetting('DNAsize_to_Vbeads')
-        a = coef_dict['a']
-        b = coef_dict['b']
-        c = coef_dict['c']
-        return a, b, c
+        # Left for compatibility
+        return getBeadsVolumeCoef()
         
     def calcBeadsVol(self, sample, cutoff):
         v = sample.getVolume()
-        a, b, c = self.getBeadsVolumeCoef()
+        a, b, c = getBeadsVolumeCoef()
         multiplier = a + b / cutoff + c / cutoff ** 2
         return v * multiplier
             
@@ -2373,4 +2370,16 @@ class consumable(rack):
     def getRaiseWithTipdZ(self):
         return self._getSetting('raise_with_tip_dz')
         
+
+def getBeadsVolumeCoef():
+    """
+    Returns the coefficients for transforming the DNA size to beads volume.
+    """
     
+    temp_robot_data_obj = data(name='robot')
+    coef_dict = temp_robot_data_obj._getSetting('DNAsize_to_Vbeads')
+    a = coef_dict['a']
+    b = coef_dict['b']
+    c = coef_dict['c']
+    del temp_robot_data_obj
+    return a, b, c
