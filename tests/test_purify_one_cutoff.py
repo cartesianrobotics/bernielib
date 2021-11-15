@@ -68,6 +68,7 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         self.assertEqual(call, expected)
 
+    """
     @patch('time.sleep')
     @patch('purify.separateEluateAllTubes')
     @patch('purify.eluteAllSamples')
@@ -100,87 +101,8 @@ class one_step_cutoff_test_case(unittest.TestCase):
         mock_addBeadsToAll_first_call_delay_arg = mock_addBeadsToAll.mock_calls[0][2]['delay']
         self.assertEqual(self.ber, mock_addBeadsToAll_first_call_first_arg)
         self.assertEqual(1, mock_addBeadsToAll_first_call_delay_arg)
-        
-
-    @patch('time.sleep')
-    @patch('purify.separateEluateAllTubes')
-    @patch('purify.eluteAllSamples')
-    @patch('purify.waitAfterTimestamp')
-    @patch('purify.add80PctEthanol')
-    @patch('purify.removeSupernatant')
-    @patch('purify.bl.robot.dumpTipToWaste')
-    @patch('purify.bl.robot.transferLiquid')
-    @patch('purify.bl.robot.mixByScript')
-    @patch('purify.bl.robot.pickUpNextTip')
-    @patch('purify.mixManySamples')
-    @patch('purify.bl.robot.setSpeedPipette')
-    def test_purifyOneCutoff__pipette_speed(self, 
-        mock_setSpeedPipette, mock_mixManySamples, mock_pickUpNextTip, mock_mixByScript,
-        mock_transferLiquid, mock_dumpTipToWaste, mock_removeSupernatant,
-        mock_add80PctEthanol, mock_waitAfterTimestamp, mock_eluteAllSamples,
-        mock_separateEluateAllTubes, mock_sleep):
-        
-        filepath = r'.\factory_default\samplesheet.csv'
-        s = ponec.settings(filepath)
-        ponec.purify_one_cutoff(self.ber, s)
-        
-        # Speed while pipetting beads in
-        
-        call_setting_beads_speed = self.ber.setSpeedPipette.mock_calls[0]
-        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[1]
-        
-        beads_speed = call_setting_beads_speed[1][0]
-        def_speed = call_setting_default_speed[1][0]
-        
-        self.assertEqual(beads_speed, 1500)
-        self.assertEqual(def_speed, 2500)
-        
-        # Speed while pipetting supernatant out
-        
-        call_setting_sup_speed = self.ber.setSpeedPipette.mock_calls[2]
-        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[3]
-        
-        sup_speed = call_setting_sup_speed[1][0]
-        def_speed = call_setting_default_speed[1][0]
-        
-        self.assertEqual(sup_speed, 1500)
-        self.assertEqual(def_speed, 2500)
-
-        # Speed while pipetting ethanol in and out
-        
-        call_setting_etoh_speed = self.ber.setSpeedPipette.mock_calls[4]
-        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[5]
-        
-        sup_speed = call_setting_etoh_speed[1][0]
-        def_speed = call_setting_default_speed[1][0]
-        
-        self.assertEqual(sup_speed, 2000)
-        self.assertEqual(def_speed, 2500)
-        
-        call_setting_etoh_speed = self.ber.setSpeedPipette.mock_calls[6]
-        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[7]
-        
-        sup_speed = call_setting_etoh_speed[1][0]
-        def_speed = call_setting_default_speed[1][0]
-        
-        self.assertEqual(sup_speed, 2000)
-        self.assertEqual(def_speed, 2500)
-        
-        # Speed while pipetting eluent in
-        
-        call_setting_eluent_speed = self.ber.setSpeedPipette.mock_calls[8]
-        call_setting_default_speed = self.ber.setSpeedPipette.mock_calls[9]
-        
-        sup_speed = call_setting_eluent_speed[1][0]
-        def_speed = call_setting_default_speed[1][0]
-        
-        self.assertEqual(sup_speed, 1800)
-        self.assertEqual(def_speed, 2500)
-        
-        # Checking the final speed setting
-        # Making sure the script didn't accidentally chaned it.
-        self.assertEqual(self.ber.getSpeedPipette(), 2500)
-        
+    """        
+    
     
     """
     def test_transferAllSamplesToSecondStage(self):
@@ -209,7 +131,6 @@ class one_step_cutoff_test_case(unittest.TestCase):
         ponec.transferSampleToSecondStage = real_transferSampleToSecondStage
         assertEqual(ponec.transferSampleToSecondStage, real_transferSampleToSecondStage)
     """
-
 
     @patch('time.sleep')
     @patch('purify.transferAllSamplesToSecondStage')
@@ -1192,5 +1113,50 @@ class purify_protocol_test_case(unittest.TestCase):
         self.assertEqual(p2.tubes.samples_list[0].getWell(), (1, 6))
 
 
+    @patch('purify.bl.robot.moveAxisDelta')
+    @patch('purify.bl.robot.uptakeLiquid')
+    @patch('purify.bl.robot.dumpTipToWaste')
+    @patch('purify.bl.robot.transferLiquid')
+    @patch('purify.bl.robot.mixByScript')
+    @patch('purify.bl.robot.pickUpNextTip')
+    @patch('purify.bl.robot._writeAndWait')
+    @patch('serial.Serial')
+    @patch('time.sleep', return_value=None)
+    @patch('purify.bl.robot.setSpeedPipette')
+    def test_purify__one_stage__pipette_speed(self, 
+        mock_setSpeedPipette, mock_sleep, mock_serial,
+            mock_writeAndWait, mock_pickUpNextTip,
+            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid, 
+            mock_moveAxisDelta):
+        
+        p = ponec.protocol(self.ber, self.settings)
+        p.purify()
+        
+        # Adding beads
+        self.assertEqual(mock_setSpeedPipette.mock_calls[0], mock.call(1500.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[1], mock.call(2500.0))
+        # Removing sup
+        self.assertEqual(mock_setSpeedPipette.mock_calls[2], mock.call(1500.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[3], mock.call(2500.0))
+        # Adding ethanol 1st stage
+        self.assertEqual(mock_setSpeedPipette.mock_calls[4], mock.call(2000.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[5], mock.call(2500.0))
+        # Removing ethanol 1st stage
+        self.assertEqual(mock_setSpeedPipette.mock_calls[6], mock.call(2000.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[7], mock.call(2500.0))
+        # Adding ethanol 2nd stage
+        self.assertEqual(mock_setSpeedPipette.mock_calls[8], mock.call(2000.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[9], mock.call(2500.0))
+        # Removing ethanol 2nd stage
+        self.assertEqual(mock_setSpeedPipette.mock_calls[10], mock.call(2000.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[11], mock.call(2500.0))
+        # Adding eluent
+        self.assertEqual(mock_setSpeedPipette.mock_calls[12], mock.call(1800.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[13], mock.call(2500.0))
+        # Transferring eluate to the results tubes
+        self.assertEqual(mock_setSpeedPipette.mock_calls[14], mock.call(1800.0))
+        self.assertEqual(mock_setSpeedPipette.mock_calls[15], mock.call(2500.0))
+
 if __name__ == '__main__':
     unittest.main()
+    

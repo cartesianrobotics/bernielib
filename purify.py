@@ -1131,48 +1131,8 @@ def purify_one_cutoff(robot, settings):
     Functions for 1-cutoff purification, that removes lower length DNA.
     Call this function to perform an entire purification
     """
-    s = settings
-    tubes = items(robot, settings) # Initializing samples and reagents
-    
-    logging.info("This is the one-stage magnetic beads purification.")
-    logging.info("It will remove any DNA and other molecules of low molecular weight.")
-    logging.info("I will purify %s samples." % tubes.number_of_samples)
-    logging.info("I will use %s uL of magnetic beads to purify." % (s.beads_vol_1st_stage_list, ))
-    logging.info("I will elute the resulting DNA with %s uL of eluent" % (s.V_eluent, ))
-    
-    # Starting the physical protocol
-    logging.info("Now adding magnetic beads...")
-    timestamp_beads_added = addBeadsToAll(robot, tubes, s.beads_vol_1st_stage_list,  
-                                          pipetting_speed=s.beads_pipetting_speed, 
-                                          delay=s.pipetting_delay)
-    logging.info("Beads addition complete.")
-    logging.info("Now waiting for DNA absorption...")
-    
-    
-    # Extra mixing samples with magnetic beads during the protocol.
-    mixManySamples(robot, tubes.samples_list, timestamp_beads_added, settings)
-    
-    # Pulling beads to the side
-    logging.info("DNA absorption complete.")
-    logging.info("Now pulling the beads towards the side of the tube for %s minutes..." % ((s.T_pull/60.0), ))
-    robot.moveMagnetsTowardsTube(poweroff=True)
-    time.sleep(s.T_pull)
-    
-    # Removing supernatant (the desired DNA of larger molecular weight is on the beads)
-    logging.info("Beads are now on the side of the tube.")
-    logging.info("Now removing the supernatant...")
-    # Setting the pipette speed for the viscous beads supernatant
-    ts = removeSupernatantAllSamples(robot, tubes.samples_list, tubes.waste, s.beads_pipetting_speed, 
-                                     fast=True, delay=s.pipetting_delay)
-    logging.info("Supernatant removed from all the tubes.")
-    
-    # Ethanol wash.
-    ethanolWash(robot, s, tubes.samples_list, tubes.ethanol, tubes.waste)
-
-    # Elution
-    elution(robot, settings, tubes)
-    
-    logging.info("One-stage purification finished.")
+    p = protocol(robot, settings)
+    p.purify()
     
 
 def purifyTwoCutoffs(robot, settings):
