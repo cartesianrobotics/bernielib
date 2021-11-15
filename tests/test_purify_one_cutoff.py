@@ -68,42 +68,7 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         self.assertEqual(call, expected)
 
-    """
-    @patch('time.sleep')
-    @patch('purify.separateEluateAllTubes')
-    @patch('purify.eluteAllSamples')
-    @patch('purify.waitAfterTimestamp')
-    @patch('purify.add80PctEthanol')
-    @patch('purify.removeSupernatantAllSamples')
-    @patch('purify.bl.robot.moveMagnetsTowardsTube')
-    @patch('purify.mixManySamples')
-    @patch('purify.bl.robot.setSpeedPipette')
-    @patch('purify.addBeadsToAll')
-    def test_purifyOneCutoff__pipetting_delay__addBeadsToAll(self, 
-                                                             mock_addBeadsToAll,
-                                                             mock_setSpeedPipette,
-                                                             mock_mixManySamples,
-                                                             mock_moveMagnetsTowardsTube,
-                                                             mock_removeSupernatantAllSamples,
-                                                             mock_add80PctEthanol,
-                                                             mock_waitAfterTimestamp,
-                                                             mock_eluteAllSamples,
-                                                             mock_separateEluateAllTubes,
-                                                             mock_sleep):
-        self.ber.setSpeedPipette = mock_setSpeedPipette
-        self.ber.setSpeedPipette = mock_moveMagnetsTowardsTube
         
-        filepath = r'.\factory_default\samplesheet.csv'
-        s = ponec.settings(filepath)
-        ponec.purify_one_cutoff(self.ber, s)
-        
-        mock_addBeadsToAll_first_call_first_arg = mock_addBeadsToAll.mock_calls[0][1][0]
-        mock_addBeadsToAll_first_call_delay_arg = mock_addBeadsToAll.mock_calls[0][2]['delay']
-        self.assertEqual(self.ber, mock_addBeadsToAll_first_call_first_arg)
-        self.assertEqual(1, mock_addBeadsToAll_first_call_delay_arg)
-    """        
-    
-    
     """
     def test_transferAllSamplesToSecondStage(self):
         
@@ -1124,7 +1089,7 @@ class purify_protocol_test_case(unittest.TestCase):
     @patch('time.sleep', return_value=None)
     @patch('purify.bl.robot.setSpeedPipette')
     def test_purify__one_stage__pipette_speed(self, 
-        mock_setSpeedPipette, mock_sleep, mock_serial,
+            mock_setSpeedPipette, mock_sleep, mock_serial,
             mock_writeAndWait, mock_pickUpNextTip,
             mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid, 
             mock_moveAxisDelta):
@@ -1156,6 +1121,30 @@ class purify_protocol_test_case(unittest.TestCase):
         # Transferring eluate to the results tubes
         self.assertEqual(mock_setSpeedPipette.mock_calls[14], mock.call(1800.0))
         self.assertEqual(mock_setSpeedPipette.mock_calls[15], mock.call(2500.0))
+
+
+    @patch('purify.bl.robot.moveAxisDelta')
+    @patch('purify.bl.robot.uptakeLiquid')
+    @patch('purify.bl.robot.dumpTipToWaste')
+    @patch('purify.bl.robot.transferLiquid')
+    @patch('purify.bl.robot.mixByScript')
+    @patch('purify.bl.robot.pickUpNextTip')
+    @patch('purify.bl.robot._writeAndWait')
+    @patch('serial.Serial')
+    @patch('time.sleep', return_value=None)
+    def test_purify__one_stage__pipette_delay(self, 
+            mock_sleep, mock_serial, mock_writeAndWait, mock_pickUpNextTip,
+            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid, 
+            mock_moveAxisDelta):
+        
+        p = ponec.protocol(self.ber, self.settings)
+        p.purify()
+        
+        for call in mock_transferLiquid.mock_calls:
+            self.assertEqual(call[2]['delay'], 1.0)
+        
+
+
 
 if __name__ == '__main__':
     unittest.main()
