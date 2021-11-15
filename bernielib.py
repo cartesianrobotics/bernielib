@@ -22,6 +22,9 @@ from general import listSerialPorts
 # TODO: Create settings for which COM port associates with which part of electronics
 # (which one is for smoothieboard, which one is for the load cells)
 # TODO: Tip end correction
+# TODO: z_safe to settings.
+# TODO: Create function that would pick  up a  tip if it is not yet picked.
+# TODO: Deciding dump tip fate in this library (introduce settings for that as well).
 
 
 """
@@ -560,7 +563,6 @@ class robot(data):
         self.last_tip_coord = (col, row)
         return self.last_tip_coord
 
-
     def _linearFunction(self, x, slope, intercept):
         return slope * x + intercept
     
@@ -666,7 +668,7 @@ class robot(data):
         return volume
     
 
-    def movePipetteToVolume(self, volume, speed):
+    def movePipetteToVolume(self, volume, speed=None):
         plunger_position = self.calcPipettePositionFromVolume(volume)
         self.pipetteMove(plunger_position, speed=speed)
         
@@ -807,8 +809,8 @@ class robot(data):
         self._uptakeRemainingLiquidFromTheSide('Y', -R, T, liquid_uptake_low_volume_bottom_offset, 0)
 
     
-    def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, in_place=False,
-                     ignore_calibration=False):
+    def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, 
+                     in_place=False, ignore_calibration=False):
         """
         Uptakes selected amount of liquid from the sample.
         This function won't check whether the liquid amount exceeds the pipette capability.
@@ -896,7 +898,7 @@ class robot(data):
             # Uptaking liquid
             self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=volume*0.8, R=2, T=0.5, init_delay=0.5)
             # Waiting after last step (maybe some liquid left)
-            time.sleep(0.5)
+            time.sleep(pipetting_delay)
             # Eliminating the lag
             self.movePipetteToVolume(lag_vol_down)
         else:

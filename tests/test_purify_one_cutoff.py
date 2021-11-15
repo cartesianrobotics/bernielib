@@ -4,6 +4,7 @@ import mock
 import logging
 import csv
 import time
+from shutil import copyfile
 import bernielib
 
 import purify as ponec
@@ -49,8 +50,9 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         filepath = r'.\tests\samplesheet_2stages__beads_vol.csv'
         s = ponec.settings(filepath)
-        samples_list = ponec.initSamples(self.ber, s)
-        intermediate_list = ponec.initIntermediate(self.ber, s)
+        tubes = ponec.items(self.ber, s)
+        samples_list = tubes.samples_list
+        intermediate_list = tubes.intermediate_list
         sample = samples_list[0]
         intermediate = intermediate_list[0]
         
@@ -242,8 +244,6 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         filepath = r'.\tests\samplesheet_2stages__beads_vol.csv'
         s = ponec.settings(filepath)
-        samples_list = ponec.initSamples(self.ber, s)
-        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, s)
         
         ponec.purifyTwoCutoffs(self.ber, s)
         
@@ -281,21 +281,20 @@ class one_step_cutoff_test_case(unittest.TestCase):
         # Loading necessary parameters
         filepath = r'.\factory_default\samplesheet.csv'
         s = ponec.settings(filepath)
-        samples_list = ponec.initSamples(self.ber, s)
-        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, s)
+        tubes = ponec.items(self.ber, s)
         
         # Running the function to be tested
-        ponec.ethanolWash(self.ber, s, samples_list, EtOH80pct, waste)
+        ponec.ethanolWash(self.ber, s, tubes.samples_list, tubes.ethanol, tubes.waste)
         
         # Making sure the reagents (ethanol and waste) are where they should be
         ethanol_obj_provided_to_1st_add80PctEthanol = mock_add80PctEthanol.mock_calls[0][1][2]
-        self.assertEqual(ethanol_obj_provided_to_1st_add80PctEthanol, EtOH80pct)
+        self.assertEqual(ethanol_obj_provided_to_1st_add80PctEthanol, tubes.ethanol)
         ethanol_sample_well = ethanol_obj_provided_to_1st_add80PctEthanol.getWell()
         self.assertEqual(ethanol_sample_well, (0,2))
         self.assertEqual(ethanol_obj_provided_to_1st_add80PctEthanol.rack, self.ber.reagents_rack)
         
         ethanol_obj_provided_to_2nd_add80PctEthanol = mock_add80PctEthanol.mock_calls[1][1][2]
-        self.assertEqual(ethanol_obj_provided_to_2nd_add80PctEthanol, EtOH80pct)
+        self.assertEqual(ethanol_obj_provided_to_2nd_add80PctEthanol, tubes.ethanol)
         ethanol_sample_well = ethanol_obj_provided_to_2nd_add80PctEthanol.getWell()
         self.assertEqual(ethanol_sample_well, (0,2))
         self.assertEqual(ethanol_obj_provided_to_2nd_add80PctEthanol.rack, self.ber.reagents_rack)
@@ -303,9 +302,9 @@ class one_step_cutoff_test_case(unittest.TestCase):
         # Testing the samples positions
         # First call to add 80% ethanol
         s1, s2, s3 = mock_add80PctEthanol.mock_calls[0][1][1]
-        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
-        self.assertEqual(s2, samples_list[1])
-        self.assertEqual(s3, samples_list[2])
+        self.assertEqual(s1, tubes.samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, tubes.samples_list[1])
+        self.assertEqual(s3, tubes.samples_list[2])
         self.assertEqual(s1.getWell(), (1, 0))  # Samples are in the right wells
         self.assertEqual(s2.getWell(), (1, 1))
         self.assertEqual(s3.getWell(), (1, 2))
@@ -315,9 +314,9 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         # Second call to add 80% ethanol
         s1, s2, s3 = mock_add80PctEthanol.mock_calls[1][1][1]
-        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
-        self.assertEqual(s2, samples_list[1])
-        self.assertEqual(s3, samples_list[2])
+        self.assertEqual(s1, tubes.samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, tubes.samples_list[1])
+        self.assertEqual(s3, tubes.samples_list[2])
         self.assertEqual(s1.getWell(), (1, 0))  # Samples are in the right wells
         self.assertEqual(s2.getWell(), (1, 1))
         self.assertEqual(s3.getWell(), (1, 2))
@@ -327,9 +326,9 @@ class one_step_cutoff_test_case(unittest.TestCase):
         
         # Supernatant removed after 1st wash
         s1, s2, s3 = mock_removeSupernatantAllSamples.mock_calls[0][1][1]
-        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
-        self.assertEqual(s2, samples_list[1])
-        self.assertEqual(s3, samples_list[2])
+        self.assertEqual(s1, tubes.samples_list[0])   # Samples are what they should be.
+        self.assertEqual(s2, tubes.samples_list[1])
+        self.assertEqual(s3, tubes.samples_list[2])
 
     
     @patch('time.sleep')
@@ -351,40 +350,14 @@ class one_step_cutoff_test_case(unittest.TestCase):
         # Loading necessary parameters
         filepath = r'.\factory_default\samplesheet.csv'
         s = ponec.settings(filepath)
-        samples_list = ponec.initSamples(self.ber, s)
-        result_list = ponec.initResultTubes(self.ber, s)
-        beads, waste, water, EtOH80pct = ponec.initReagents(self.ber, s)
+        tubes = ponec.items(self.ber, s)
         
         # Running the function to be tested
-        ponec.elution(self.ber, s, samples_list, result_list, water)
+        ponec.elution(self.ber, s, tubes)
         
-        # Function eluteAllSamples receives the right samples
-        s1, s2, s3 = mock_eluteAllSamples.mock_calls[0][1][1]
-        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
-        self.assertEqual(s2, samples_list[1])
-        self.assertEqual(s3, samples_list[2])
-        supposed_water = mock_eluteAllSamples.mock_calls[0][1][2]
-        self.assertEqual(water, supposed_water)
-        # Function separateEluateAllTubes recives the right samples
-        s1, s2, s3 = mock_separateEluateAllTubes.mock_calls[0][1][1]
-        self.assertEqual(s1, samples_list[0])   # Samples are what they should be.
-        self.assertEqual(s2, samples_list[1])
-        self.assertEqual(s3, samples_list[2])
-        r1, r2, r3 = mock_separateEluateAllTubes.mock_calls[0][1][2]
-        self.assertEqual(r1, result_list[0])   # Samples are what they should be.
-        self.assertEqual(r2, result_list[1])
-        self.assertEqual(r3, result_list[2])
-    
-
-    def test_initIntermediate(self):
-        settings = ponec.settings(r'.\tests\samplesheet_2stages__beads_vol.csv')
-        intermediate_samples_list = ponec.initIntermediate(self.ber, settings)
-        
-        self.assertEqual(intermediate_samples_list[0].getWell(), (1, 6))
-        self.assertEqual(intermediate_samples_list[1].getWell(), (1, 7))
-        self.assertEqual(intermediate_samples_list[2].getWell(), (1, 8))
-        
-        
+        self.assertEqual(mock_eluteAllSamples.mock_calls, 
+            [mock.call(self.ber, s, tubes, pipetting_delay=1.0)])
+            
     
     
 class purify_settings_test_case(unittest.TestCase):
@@ -1037,5 +1010,187 @@ class purify_settings_test_case(unittest.TestCase):
         self.assertEqual(v_list[2], 22)
 
     
+
+
+class purify_items_test_case(unittest.TestCase):
+    """
+    Handles tests for samples, reagents and other items,
+    usually a tube.
+    """
+    @patch('purify.bl.robot._writeAndWait')
+    @patch('time.sleep', return_value=None)
+    @patch('bernielib.time')
+    @patch('purify.time.sleep')
+    @patch('serial.Serial')
+    def setUp(self, mock_serial, mock_sleep, mock_sleep2, mock_sleep3, mock_writeAndWait):
+        logging.disable(logging.CRITICAL)
+        self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        csv_path = r'.\factory_default\samplesheet.csv'
+        self.settings = ponec.settings(csv_path)
+        
+        
+    def tearDown(self):
+        try:
+            del self.ber
+        except:
+            pass
+        logging.disable(logging.NOTSET)
+
+    def test_initItems(self):
+        items = ponec.items(self.ber, self.settings)
+        
+        self.assertEqual(items.settings, self.settings)
+        self.assertEqual(items.robot, self.ber)
+        self.assertEqual(items.number_of_samples, 3)
+        self.assertEqual(items.initial_sample_vol_list, [100, 100, 100])
+        self.assertEqual(items.cutoffs, self.settings.cutoffs)
+        self.assertEqual(items.samples_list[0].getVolume(), 100)
+        self.assertEqual(items.samples_list[0].getWell(), (1, 0))
+        self.assertEqual(items.samples_list[1].getWell(), (1, 1))
+        self.assertEqual(items.samples_list[0].rack, self.ber.samples_rack)
+        self.assertIsNone(items.intermediate_list)
+        self.assertEqual(items.result_list[0].getVolume(), 0)
+        self.assertEqual(items.result_list[0].getWell(), (0,0))
+        
+        self.assertEqual(items.beads.getVolume(), 3500)
+        self.assertEqual(items.beads.getWell(), (0, 4))
+        self.assertEqual(items.beads.rack, self.ber.reagents_rack)
+        self.assertEqual(items.waste.getVolume(), 0)
+        self.assertEqual(items.waste.getWell(), (0, 1))
+        self.assertEqual(items.waste.rack, self.ber.reagents_rack)
+        self.assertEqual(items.ethanol.getVolume(), 25000)
+        self.assertEqual(items.ethanol.getWell(), (0, 2))
+        self.assertEqual(items.ethanol.rack, self.ber.reagents_rack)
+        self.assertEqual(items.eluent.getVolume(), 25000)
+        self.assertEqual(items.eluent.getWell(), (0, 0))
+        self.assertEqual(items.eluent.rack, self.ber.reagents_rack)
+
+
+class purify_protocol_test_case(unittest.TestCase):
+    """
+    Handles tests for the protocol class.
+    Protocol class handles all the protocol-related operations and data.
+    """
+    
+    @patch('purify.bl.robot._writeAndWait')
+    @patch('time.sleep', return_value=None)
+    @patch('bernielib.time')
+    @patch('purify.time.sleep')
+    @patch('serial.Serial')
+    def setUp(self, mock_serial, mock_sleep, mock_sleep2, mock_sleep3, mock_writeAndWait):
+        logging.disable(logging.CRITICAL)
+        self.test_samplesheet_path = r'.\tests\samplesheet_protocol_test.csv'
+        self.test_samplesheet_path_2 = r'.\tests\samplesheet_2stages_protocol_test.csv'
+        copyfile(r'.\factory_default\samplesheet.csv', self.test_samplesheet_path)
+        copyfile(r'.\factory_default\samplesheet_2stages.csv', self.test_samplesheet_path_2)
+        self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        self.settings = ponec.settings(self.test_samplesheet_path)
+        self.settings2 = ponec.settings(self.test_samplesheet_path_2)
+        
+        # 11/12/2021 - default pipetting speed is 2500.0
+        self.default_pipetting_speed = self.ber.getSpeedPipette()
+        
+    def tearDown(self):
+        # Preserving the pipette speed settings, that might have been changed 
+        # during failed tests.
+        self.ber.setSpeedPipette(self.default_pipetting_speed)
+        try:
+            os.remove(self.test_samplesheet_path)
+        except:
+            pass
+        try:
+            os.remove(self.test_samplesheet_path_2)
+        except:
+            pass
+        logging.disable(logging.NOTSET)
+    
+    def test_settings_file_copied(self):
+        self.assertTrue(os.path.exists(self.test_samplesheet_path))
+
+    def test__init_protocol(self):
+        """
+        Check whether the protocol would even initialize
+        """
+        p = ponec.protocol(self.ber, self.settings)
+        self.assertEqual(p.robot, self.ber)
+        self.assertEqual(p.settings, self.settings)
+        self.assertEqual(p.tubes.samples_list[0].getVolume(), 100)
+        self.assertEqual(p.default_pipette_speed, 2500.0)
+        self.assertEqual(p.incubation_time, 0)
+
+
+    @patch('purify.bl.robot.moveAxisDelta')
+    @patch('purify.bl.robot.uptakeLiquid')
+    @patch('purify.bl.robot.dumpTipToWaste')
+    @patch('purify.bl.robot.transferLiquid')
+    @patch('purify.bl.robot.mixByScript')
+    @patch('purify.bl.robot.pickUpNextTip')
+    @patch('purify.bl.robot._writeAndWait')
+    @patch('serial.Serial')
+    @patch('time.sleep', return_value=None)
+    def test_purify(self, mock_sleep, mock_serial,
+            mock_writeAndWait, mock_pickUpNextTip,
+            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid, 
+            mock_moveAxisDelta):
+        p = ponec.protocol(self.ber, self.settings)
+        p.purify()
+        p2 = ponec.protocol(self.ber, self.settings2)
+        p2.purify()
+
+    @patch('purify.protocol.elution')
+    @patch('purify.protocol.ethanolWash')
+    @patch('purify.protocol.removeSupernatant')
+    @patch('purify.protocol.transferSamplesToSecondStage')
+    @patch('purify.protocol.absorbDnaOntoBeads')
+    def test_purify_two_stages(self, mock_absrobDNA, mock_transfer, mock_remsup,
+                mock_etWash, mock_elution):
+        p2 = ponec.protocol(self.ber, self.settings2)
+        p2.purify()
+        mock_transfer.assert_called()
+        mock_absrobDNA.assert_called()
+        mock_remsup.assert_called()
+        mock_etWash.assert_called()
+        mock_elution.assert_called()
+    
+
+    @patch('purify.bl.robot.pickUpNextTip')
+    @patch('purify.bl.robot.dumpTipToWaste')
+    @patch('purify.bl.robot.move')
+    @patch('purify.bl.robot.transferLiquid')
+    def test_removeSupernatant(self, mock_transferLiquid, mock_move,
+            mock_dumpTipToWaste, mock_pickUpNextTip):
+        p = ponec.protocol(self.ber, self.settings)
+        p.removeSupernatant()
+
+    @patch('purify.bl.robot.pickUpNextTip')
+    @patch('purify.bl.robot.dumpTipToWaste')
+    @patch('purify.bl.robot.move')
+    @patch('purify.bl.robot.transferLiquid')
+    def test_transferLiquidManyTubes(self, mock_transferLiquid, mock_move,
+            mock_dumpTipToWaste, mock_pickUpNextTip):
+        p = ponec.protocol(self.ber, self.settings)
+        p.transferLiquidManyTubes(sources=p.tubes.samples_list, 
+                destinations=p.tubes.result_list, 
+                v_list=self.settings.beads_vol_1st_stage_list)
+        p.transferLiquidManyTubes(sources=p.tubes.samples_list, 
+                destinations=p.tubes.result_list)
+    
+    
+    @patch('purify.bl.robot.transferLiquid')
+    @patch('purify.protocol.dumpTip')
+    @patch('purify.protocol.pickUpTip')
+    def test_transferSamplesToSecondStage(self, mock_pickUpTip, mock_dumpTip,
+            mock_transferLiquid):
+        self.assertEqual(self.settings2.V_beads_list, 
+                    self.settings2.beads_vol_1st_stage_list)
+        
+        p2 = ponec.protocol(self.ber, self.settings2)
+        self.assertEqual(p2.tubes.samples_list[0].getWell(), (1, 0))
+        p2.transferSamplesToSecondStage()
+        self.assertEqual(self.settings2.V_beads_list, 
+                    self.settings2.beads_vol_2nd_stage_list)
+        self.assertEqual(p2.tubes.samples_list[0].getWell(), (1, 6))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -131,10 +131,10 @@ class settings():
         self.positions_to_purify_list = self.positionsToPurify()
         self.positions_2nd_stage_tubes = self.positionsToPurify2ndStage()
         
-        self.beads_tube_type = self.returnProtocolParameter('Beads tube type')
-        self.waste_tube_type = self.returnProtocolParameter('Waste tube type')
-        self.eluent_tube_type = self.returnProtocolParameter('Eluent tube type')
-        self.ethanol_tube_type = self.returnProtocolParameter('Ethanol tube type')
+        self.beads_tube_type = self._getTubeType('Beads')
+        self.waste_tube_type = self._getTubeType('Waste')
+        self.eluent_tube_type = self._getTubeType('Eluent')
+        self.ethanol_tube_type = self._getTubeType('Ethanol')
         
         self.beads_rack_name = self._getRackName('Beads')
         self.waste_rack_name = self._getRackName('Waste')
@@ -146,14 +146,15 @@ class settings():
         self.eluent_column_in_rack, self.eluent_row_in_rack = self._getTubePositionInRack('Eluent')
         self.ethanol_column_in_rack, self.ethanol_row_in_rack = self._getTubePositionInRack('Ethanol')
         
-        self.V_beads = self.returnProtocolParameter('Beads initial volume')
-        self.V_waste = self.returnProtocolParameter('Waste volume')
-        self.V_eluent = self.returnProtocolParameter('Eluent volume')
-        self.V_ethanol = self.returnProtocolParameter('Ethanol volume')
+        self.V_beads = self._getReagentVolume('Beads')
+        self.V_waste = self._getReagentVolume('Waste')
+        self.V_eluent = self._getReagentVolume('Eluent')
+        self.V_ethanol = self._getReagentVolume('Ethanol')
         
         self.beads_vol_1st_stage_list = self._getBeadsVolForAllSamples(stage=1)
         # Will get some meaningful data only if cutoffs setting is 2.
         self.beads_vol_2nd_stage_list = self._getBeadsVolForAllSamples(stage=self.cutoffs)
+        self.V_beads_list = self.beads_vol_1st_stage_list # Pass 2nd stage list if needed.
         
         self.wash_1_vol_list = self._returnSampleParameterList('First stage ethanol wash volume')
         self.wash_2_vol_list = self._returnSampleParameterList('Second stage ethanol wash volume')
@@ -167,6 +168,14 @@ class settings():
         self.T_elute = self.returnProtocolParameter('Elution time') * 60.0
         self.T_absoprtion = self.returnProtocolParameter('DNA absorption time') * 60.0
         
+        # Robot geometry settings
+        self.z_safe = 50.0  # Height at which it is safe to move at any x,y coordinate.
+        
+        # Tip settings
+        # What to do with the used tip. 'waste' - dump to waste; 'back' - return 
+        # to the same place in the tip rack.
+        self.used_tip_fate = 'waste' 
+
         
     def returnPort(self, kind):
         try:
@@ -181,6 +190,7 @@ class settings():
             return value
         
     def _getRackName(self, reagent):
+        reagent = reagent.capitalize()
         rack_name = self.returnProtocolParameter(reagent+' tube rack')
         if rack_name == 'samples' or rack_name == 'reagents':
             return rack_name
@@ -189,6 +199,18 @@ class settings():
             logging.error("For the reagent '%s', the correct rack name may be 'samples' or 'reagents'" % reagent)
             logging.error("but the name %s was provided." % rack_name)
             return 
+
+    def _getTubeType(self, reagent):
+        reagent = reagent.capitalize()
+        return self.returnProtocolParameter(reagent+' tube type')
+
+    def _getReagentVolume(self, reagent):
+        reagent = reagent.capitalize()
+        if reagent == 'Beads':
+            param_name = reagent+' initial volume'
+        else:
+            param_name = reagent+' volume'
+        return self.returnProtocolParameter(param_name)
 
     def _getTubePositionInRack(self, reagent):
         if reagent == 'Beads':
@@ -282,14 +304,393 @@ class settings():
     
     def _getBeadsVolForAllSamples(self, stage):
         return [self._getBeadsVolume(x, stage) for x in self.positionsToPurify()]
+
+
+
+
+
+
+class items():
+    """
+    Handles items, such as samples, reagents and intermediate tubes, etc.
+    """
+    
+    def __init__(self, robot, settings):
+        self.settings = settings
+        self.robot = robot
+        
+        self.initial_sample_vol_list = self.settings.initial_sample_vol_list
+        self.number_of_samples = self.settings.number_of_samples
+        self.cutoffs = self.settings.cutoffs
+        
+        # Initializing samples
+        self.samples_list = self.initSamples()
+        self.intermediate_list = self.initIntermediate()
+        self.result_list = self.initResults()
+        # Assign whatever next stage samples would be.
+        self.next_stage_tubes_list = self.result_list
+        
+        self.beads = self.initReagent('Beads')
+        self.waste = self.initReagent('Waste')
+        self.eluent = self.initReagent('Eluent')
+        self.ethanol = self.initReagent('Ethanol')
+        
+        self.first_sample = self.samples_list[0]
+        
+    
+    def initSamples(self):
+        return bl.createSamplesToPurifyList(self.robot, self.initial_sample_vol_list)
+        
+    def initIntermediate(self):
+        if self.cutoffs == 2:
+            return bl.createSamplesToPurifyList(self.robot, number_of_tubes=self.number_of_samples,
+                        start_from_position=6)
+        else:
+            return
+    
+    def initResults(self):
+        return bl.createPurifiedSamplesList(self.robot, self.number_of_samples)
+
+    def getRack(self, rack_name, reagent_name):
+        if rack_name == 'samples':
+            return self.robot.samples_rack
+        elif rack_name == 'reagents':
+            return self.robot.reagents_rack
+        else:
+            logging.error("There is no rack with the name '%s', specified for the %s" % (rack_name, reagent_name,))
+            return
+    
+    def initReagent(self, reagent):
+        reagent = reagent.capitalize()
+        rack_name = self.settings._getRackName(reagent)
+        rack = self.getRack(rack_name, reagent)
+        tube_type = self.settings._getTubeType(reagent)
+        col, row = self.settings._getTubePositionInRack(reagent)
+        sample_name = reagent+'_tube'
+        v = self.settings._getReagentVolume(reagent)
+        tube = bl.createSample(tube_type, sample_name, rack, col, row, v)
+        return tube
+
+    def samplesToIntermediate(self):
+        # The logic behind the "samples":
+        # A protocol has many tubes; among those are:
+        # - The tubes with the initial, "dirty" sample
+        # - Optionally the "intermediate" tubes, where the sample is transferred between stages
+        # - Results tubes
+        # Protocol functions will always work with "samples" only (so I don't have to 
+        # specify to each function which sample to go to, and they are the same regardless on
+        # whether the sample or intermediate is used.)
+        # Therefore, the class has the ability to reassign "samples" to the new tubes series.
+        
+        self.samples_list = self.intermediate_list
         
 
 
 
 
+class protocol():
+    def __init__(self, robot, settings):
+        self.robot = robot
+        self.settings = settings
+        self.tubes = items(self.robot, self.settings)
+        # Used in different functions to measure the time passed since last operation.
+        # Example: need to wait five minutes since the start of the operation.
+        self.timestamp = time.time()    # Initializing only.
+        self.step = 'not started'
+        self.incubation_time = 0  # Incubation time (in seconds)
+        self.default_pipette_speed = self.robot.getSpeedPipette()
+
+    
+    def moveToSafe(self):
+        self.robot.move(self.settings.z_safe)
+    
+    def dumpTip(self):
+        """
+        Decides what to do with the used tip.
+        """
+        self.moveToSafe()
+        if self.settings.used_tip_fate == 'waste':
+            self.robot.dumpTipToWaste()          # To the waste
+        elif self.settings.used_tip_fate == 'back':
+            self.robot.returnTipBack()           # Back to the rack, so it can be reused later
+        else:
+            logging.warning("Wrong tip fate provided. Dumping the tip to waste.")
+            self.robot.dumpTipToWaste()
+        self.moveToSafe()
+    
+    def pickUpTip(self):
+        if self.robot.tip_attached == 0:
+            self.moveToSafe()
+            self.robot.pickUpNextTip()                   # Picking up next tip
+            self.moveToSafe()
+    
+    def mix(self, sample):
+        self.moveToSafe()
+        self.robot.mixByScript(sample)
+        self.moveToSafe()
+    
+    def mixManySamples(self):
+        logging.info("Now mixing the samples...")
+        for sample in self.tubes.samples_list:
+            self.pickUpTip()
+            self.mix(sample)
+            self.dumpTip()
+        logging.info("Mixing finished.")
+    
+    def pullBeads(self, pull_time):
+        logging.info("Now pulling the beads towards the side of the tubes for %s minutes" % ((pull_time/60.0), ))
+        self.robot.moveMagnetsTowardsTube()
+        time.sleep(pull_time)
+        logging.info("Beads are now at the side of their tubes.")
+    
+    
+    def getDelayBetweenActions(self, full_delay, number_of_actions):
+        if number_of_actions <= -1:
+            return full_delay
+        else:
+            return full_delay / (number_of_actions + 1)
+        
+    def getAlreadyWaitedTime(self):
+        return time.time() - self.timestamp
+    
+    def autoUpdateIncubationTime(self):
+        self.incubation_time = self.incubation_time - self.getAlreadyWaitedTime()
+        if self.incubation_time < 0:
+            self.incubation_time = 0
+    
+    def incubate(self, times_to_mix=0):
+        """
+        Waits for the certain time with an option to mix the sample (depending on the settings).
+        """
+        incubation_time_min = self.incubation_time/60.0
+        logging.info("Now incubating the samples for %s minutes." % incubation_time_min)
+        logging.info("During incubation, I will mix each sample for %s times." % times_to_mix)
+        while self.incubation_time > 0 and times_to_mix >= 0:
+            delay_between_mixes = self.getDelayBetweenActions(self.incubation_time, times_to_mix)
+            wait_time = delay_between_mixes - self.getAlreadyWaitedTime()
+            if wait_time < 0:
+                wait_time = 0
+            time.sleep(wait_time)   # Incubating
+            # After incubation is done
+            self.autoUpdateIncubationTime() # Updating the incubation time
+            self.timestamp = time.time()    # Updating the timestamp
+            if times_to_mix > 0:
+                self.mixManySamples()       # If protocol asks to mix, do so.
+            times_to_mix = times_to_mix - 1 # One less time to mix left.
+        logging.info("Incubation finished.")
+        
+    def transferLiquid(self, source, dest, v=None, touch_wall=True):
+        dry_tube = False
+        # If volume is not provided, will pipette all the volume present in the source
+        if v is None:
+            v = source.getVolume()
+            dry_tube = True
+        self.robot.transferLiquid(source, dest, v, dry_tube=dry_tube, safe_z=self.settings.z_safe,
+                delay=self.settings.pipetting_delay, touch_wall=touch_wall)
+    
+    def transferLiquidSterile(self, source, dest, v=None, touch_wall=True):
+        self.pickUpTip()
+        self.transferLiquid(source, dest, v=v, touch_wall=touch_wall)    
+        self.dumpTip()
+        
+    def transferLiquidManyTubes(self, sources, destinations, v_list=None, pipette_speed=None, 
+                    sterile=True, touch_wall=True):
+        # Changing the pipetting speed if provided. Otherwise using default.
+        if pipette_speed is not None:
+            self.robot.setSpeedPipette(pipette_speed)
+        # If volume list is not provided, generating list of None; meaning 
+        # all the liquid from the source will be transferred to destination.
+        if v_list is None:
+            v_list = [None for x in sources]
+        for s, d, v in zip(sources, destinations, v_list):
+            if sterile:
+                self.transferLiquidSterile(s, d, v, touch_wall=touch_wall)
+            else:
+                self.transferLiquid(s, d, v, touch_wall=touch_wall)
+        self.robot.setSpeedPipette(self.default_pipette_speed)
 
 
+    def addBeads(self):
+        logging.info("Now adding magnetic beads...")
+        self.robot.moveMagnetsAway(poweroff=True)    # Magnets away from the tubes
+        self.pickUpTip()
+        self.mix(self.tubes.beads)
+        
+        # Transferring beads suspension from beads tubes to the sample tubes.
+        # Using the same tip. Not touching sample tubes.
+        destinations = self.tubes.samples_list
+        sources = [self.tubes.beads for x in destinations]
+        self.transferLiquidManyTubes(sources, destinations, self.settings.V_beads_list, touch_wall=False,
+                sterile=False, pipette_speed=self.settings.beads_pipetting_speed)
+        logging.info("Beads addition complete.")
+        
+        # Mixing beads suspension with the sample
+        logging.info("Now mixing the beads with the samples, prior to absorption.")
+        self.timestamp = time.time()
+        self.mixManySamples()
+        logging.info("Mixing complete.")
+        
 
+    def absorbDnaOntoBeads(self):
+        self.addBeads()
+        self.incubate(times_to_mix=self.settings.absorption_times_to_mix)
+        self.pullBeads(pull_time=self.settings.T_pull)
+        
+    
+    def transferSamplesToSecondStage(self):
+        self.transferLiquidManyTubes(self.tubes.samples_list, self.tubes.intermediate_list,
+                    pipette_speed=self.settings.beads_pipetting_speed)
+        # Now the samples are in the intermediate tubes.
+        self.tubes.samples_list = self.tubes.intermediate_list
+        self.settings.V_beads_list = self.settings.beads_vol_2nd_stage_list
+
+
+    def removeSupernatant(self, pipette_speed=None):
+        logging.info("Discarding the supernatant to the waste.")
+        sources = self.tubes.samples_list
+        destinations = [self.tubes.waste for x in sources]
+        self.timestamp = time.time()
+        self.transferLiquidManyTubes(sources, destinations, touch_wall=False,
+                pipette_speed=pipette_speed)
+        logging.info("Supernatant removal complete.")
+    
+    
+    def addEthanol(self, vol_list):
+        self.pickUpTip()
+        self.timestamp = time.time()
+        destinations = self.tubes.samples_list
+        sources = [self.tubes.ethanol for x in destinations]
+        self.transferLiquidManyTubes(sources, destinations, vol_list, touch_wall=False, sterile=False,
+                pipette_speed=self.settings.ethanol_pipetting_speed)
+        self.dumpTip()
+    
+    
+    def ethanolWashStage(self, wash, wait_time):
+        self.incubation_time = wait_time    # Setting incubation time for ethanol wash.
+        logging.info("Wash-%s: Now adding 80 percent ethanol to all the samples..." % (wash,))
+        self.addEthanol(self.settings.wash_1_vol_list)
+        logging.info("Wash-%s: 80 percent ethanol added to all tubes." % wash)
+        logging.info("Wash-%s: Now incubating the samples for %s seconds..." % (wash, wait_time))
+        self.incubate()
+        logging.info("Wash-%s: Ethanol incubation finished." % wash)
+        logging.info("Wash-%s: Now removing ethanol from the sample tubes..." % wash)
+        self.removeSupernatant(pipette_speed=self.settings.ethanol_pipetting_speed)
+        logging.info("Wash-%s: Ethanol removed from all the samples." % wash)
+        
+    
+    def ethanolWash(self):
+        logging.info("Now performing two ethanol washes.")
+        self.ethanolWashStage(1, self.settings.T_wash_1)
+        self.ethanolWashStage(2, self.settings.T_wash_2)
+        logging.info("Ethanol washes complete.")
+        
+        logging.info("Now drying the samples from the remaining ethanol for %s minutes..." % ((self.settings.T_dry/60.0), ))
+        self.incubation_time = self.settings.T_dry
+        self.incubate()
+        logging.info("Ethanol drying finished.")
+    
+    
+    def washingBeadsFromWallDuringElution(self, sample, dx, dz, v, delay):
+        z_top = sample.getSampleTopAbsZ(added_length=self.robot._calcExtraLength())
+        z_curr = z_top + dz
+        self.robot.move(z=z_curr)
+        self.robot.moveAxisDelta('X', dx)
+        self.robot.movePipetteToVolume(v)
+        time.sleep(delay)
+    
+    def elutionMix(self, sample, volume=None, how='low'):
+        """
+        Parameter "how" can be either 'low' or 'high'
+        """
+        # Uptaking liquid
+        if volume is None:
+            volume = sample.getVolume()
+        self.robot.uptakeLiquid(sample, volume, lag_vol=5)
+        time.sleep(self.settings.pipetting_delay)
+        
+        # Washing steps, releasing liquid while moving along the wall
+        # TODO: Replace those by establishing a "move" command which simultaneously 
+        # moves X, Z and A coordinates.
+        if how == 'low':
+            dispense_vol = volume / 4.0
+            dispense_delay = self.settings.pipetting_delay / 4.0
+            self.washingBeadsFromWallDuringElution(sample, 3.0, 24.0, dispense_vol, dispense_delay)
+            self.washingBeadsFromWallDuringElution(sample, 0.0, 28.0, 2*dispense_vol, dispense_delay)
+            self.washingBeadsFromWallDuringElution(sample, -0.629, 32.0, 3*dispense_vol, dispense_delay)
+            self.washingBeadsFromWallDuringElution(sample, -0.629, 36.0, 4*dispense_vol, dispense_delay)
+        else:
+            self.washingBeadsFromWallDuringElution(sample, 3.4, 5.0, volume+50, 
+                        self.settings.pipetting_delay)
+        
+        # Moving back to center, above liquid
+        x, y = sample.getCenterXY()
+        self.robot.move(x=x, y=y)
+        z_curr = sample.calcAbsLiquidLevelFromVol(volume+100, added_length=self.robot._calcExtraLength())
+        self.robot.move(z=z_curr)
+        
+        # Pipetting out all liquid, returning plunger back to 0.
+        self.robot.movePipetteToVolume(volume+50)
+        time.sleep(self.settings.pipetting_delay)
+        self.robot.movePipetteToVolume(0)    
+    
+    
+    def addEluent(self, sample, eluent, volume):
+        self.robot.moveMagnetsAway(poweroff=True)
+        self.pickUpTip()
+        self.transferLiquid(eluent, sample, volume)
+        
+        for i in range(self.settings.elution_times_to_mix):
+            self.elutionMix(sample, how='high')
+            self.elutionMix(sample, how='high')
+            self.elutionMix(sample, how='low')
+        self.elutionMix(sample, how='low')
+        self.elutionMix(sample, how='low')
+        
+        self.dumpTip()
+        
+    def addEluentToAll(self):
+        self.timestamp = time.time()
+        logging.info("Now adding the eluent to all the samples.")
+        for sample, v_eluent in zip(self.tubes.samples_list, self.settings.eluent_vol_list):
+            self.addEluent(sample, self.tubes.eluent, v_eluent)
+        logging.info("Eluent added to all the samples.")
+    
+    def elution(self):
+        logging.info("Now eluting the DNA from the samples.")
+        # Setting the pipette speed for the eluent solution (usually water)
+        self.robot.setSpeedPipette(self.settings.eluent_pipetting_speed)
+        # Adding eluent
+        self.addEluentToAll()
+        self.incubation_time = self.settings.T_elute
+        self.incubate(times_to_mix=self.settings.elution_times_to_mix)
+        self.robot.setSpeedPipette(self.settings.default_pipette_speed) # Resetting the max pipette speed
+        
+        self.pullBeads(self.settings.T_pull)
+        
+        # Moving eluate to the results tubes
+        logging.info("Now moving the eluates to their fresh tubes...")
+        self.transferLiquidManyTubes(self.tubes.samples_list, self.tubes.result_list, 
+                pipette_speed=self.settings.eluent_pipetting_speed)
+        logging.info("Eluate transfer complete.")
+
+
+    def purify(self):
+        logging.info("This is the %s-stage magnetic beads purification." % self.settings.cutoffs)
+        
+        self.absorbDnaOntoBeads()   # First stage
+        
+        # Checking if this is a two-stage cutoff
+        if self.settings.cutoffs == 2:
+            self.transferSamplesToSecondStage()
+            self.absorbDnaOntoBeads()   # Second stage
+        
+        self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
+        self.ethanolWash()
+        self.elution()
+        
+        logging.info("%s-stage purification finished." % self.settings.cutoffs)
+        
+        
 
 
 def isArgumentPassed():
@@ -322,82 +723,16 @@ def printHowToUse():
 # Functions samples and tubes initialization
 # ===========================================================================================
 
-def initSamples(robot, settings):
-    return bl.createSamplesToPurifyList(robot, settings.initial_sample_vol_list)
-
-def initIntermediate(robot, settings):
-    return bl.createSamplesToPurifyList(robot, number_of_tubes=settings.number_of_samples, 
-                                                     start_from_position=6)  
-    
-
-def initResultTubes(robot, settings):
-    return bl.createPurifiedSamplesList(robot, settings.number_of_samples)
-
 
 def chooseRobotRackInstance(robot, rack_name, sample_rack_allowed=False, 
                             reagents_rack_allowed=True):
     if rack_name == 'samples' and sample_rack_allowed:
-        return robot.samples.rack
+        return robot.samples_rack
     elif rack_name == 'reagents' and reagents_rack_allowed:
         return robot.reagents_rack
     else:
         logging.error("There is no rack with the name '%s' or this type of rack is not allowed for the sample." % rack_name)
         return
-
-
-def initReagents(robot, settings):
-    """
-    Return 4 instances of the reagent tubes: 
-    for beads, waste, eluent, ethanol 80%; in this particular order.
-    The parameters for the tubes (such as volume and location) are also defined according to the sample sheet.
-    """
-    
-    # Beads tube settings
-    beads_rack = chooseRobotRackInstance(robot, settings.beads_rack_name, sample_rack_allowed=True)
-    if beads_rack is None:
-        logging.error("initReagents: Wrong Beads tube rack specified in the samplesheet file.")
-        #return 
-    
-    # Initializing beads tube
-    beads_tube = bl.createSample(settings.beads_tube_type, 
-        'beads', beads_rack, settings.beads_column_in_rack, settings.beads_row_in_rack,
-        settings.V_beads)
-    
-    # -------------------
-    # Waste tube settings
-    waste_rack = chooseRobotRackInstance(robot, settings.waste_rack_name)
-    if waste_rack is None:
-        logging.error("initReagents: Wrong waste tube rack specified in the samplesheet file.")
-        #return
-    
-    # Initializing waste tube
-    waste_tube = bl.createSample(settings.waste_tube_type, 'liquid_waste', 
-        waste_rack, settings.waste_column_in_rack, settings.waste_row_in_rack, 
-        settings.V_waste)
-
-    # -------------------
-    # Eluent tube settings
-    eluent_rack = chooseRobotRackInstance(robot, settings.eluent_rack_name)
-    if eluent_rack is None:
-        logging.error("initReagents: Wrong Eluent tube rack specified in the samplesheet file.")
-        #return
-    # Initializing eluent tube
-    eluent_tube = bl.createSample(settings.eluent_tube_type, 'eluent', 
-                    eluent_rack, settings.eluent_column_in_rack, 
-                    settings.eluent_row_in_rack, settings.V_eluent)
-
-    # -------------------
-    # Ethanol tube settings
-    ethanol_rack = chooseRobotRackInstance(robot, settings.ethanol_rack_name)
-    if ethanol_rack is None:
-        logging.error("initReagents: Wrong Ethanol tube rack specified in the samplesheet file.")
-        #return 
-    
-    ethanol80_tube = bl.createSample(settings.ethanol_tube_type, 'EtOH80pct', 
-                        ethanol_rack, settings.ethanol_column_in_rack, 
-                        settings.ethanol_row_in_rack, settings.V_ethanol)
-    
-    return beads_tube, waste_tube, eluent_tube, ethanol80_tube
 
 
 
@@ -420,17 +755,6 @@ def waitAfterTimestamp(timestamp, delay):
 # ===========================================================================================
 # ===========================================================================================
 
-
-
-def waitAndMixByScript(robot, sample, timestamp, delay, mix_script, tip_col, tip_row):
-    new_ts = time.time()
-    robot.pickUpNextTip()
-    robot.move(z=50)
-    while (new_ts - timestamp) < delay:
-        robot.mixByScript(sample, mix_script)
-        robot.move(z=50)
-        new_ts = time.time()
-    robot.dumpTipToPosition(tip_col, tip_row)
 
 # TODO: This function can be used at different stages of the protocol, 
 # however, it always loads Times to mix while absorbing.
@@ -466,8 +790,8 @@ def mixManySamples(robot, samples_list, timestamp, settings):
             time.sleep(wait_time_until_next_mix)
     
 
-def addBeadsToAll(robot, samples_list, 
-                  v_beads_list, beads, pipetting_speed, used_tip_fate='waste', z_safe=50, delay=1):
+def addBeadsToAll(robot, tubes,
+                  v_beads_list, pipetting_speed, used_tip_fate='waste', z_safe=50, delay=1):
     
     default_pipette_speed = robot.getSpeedPipette() # Getting robot default pipetting speed
     
@@ -476,17 +800,17 @@ def addBeadsToAll(robot, samples_list,
     robot.moveMagnetsAway(poweroff=True)    # Magnets away from the tubes
     robot.pickUpNextTip()                   # Picking up next tip
     robot.move(z=z_safe)                    # Moving up not to hit anything
-    robot.mixByScript(beads)                # Mixing beads (mix script from beads properties)
+    robot.mixByScript(tubes.beads)          # Mixing beads (mix script from beads properties)
     robot.move(z=z_safe)                    # Moving up not to hit anything
     
     # Transferring beads suspension from beads tubes to the sample tubes.
     # Using the same tip. Not touching sample tubes.
-    for sample, v_beads in zip(samples_list, v_beads_list):
-        robot.transferLiquid(beads, sample, v_beads, touch_wall=False, delay=delay)
+    for sample, v_beads in zip(tubes.samples_list, v_beads_list):
+        robot.transferLiquid(tubes.beads, sample, v_beads, touch_wall=False, delay=delay)
     
     # Mixing beads suspension with the sample
     counter = 0
-    for sample, v_beads in zip(samples_list, v_beads_list):
+    for sample, v_beads in zip(tubes.samples_list, v_beads_list):
         # First sample can use the same tip as was used to add beads.
         # For all other samples, getting a new tip. 
         if counter != 0:
@@ -537,9 +861,10 @@ def transferSampleToSecondStage(robot, sample, intermediate, z_safe=50, delay=0.
     robot.move(z=z_safe)        # Moving up so the tip does not hit anything    
 
 
-def transferAllSamplesToSecondStage(robot, samples_list, intermediate_list, z_safe=50, delay=0.5):
-    for sample, intermediate in zip(samples_list, intermediate_list):
+def transferAllSamplesToSecondStage(robot, tubes, z_safe=50, delay=0.5):
+    for sample, intermediate in zip(tubes.samples_list, tubes.intermediate_list):
         transferSampleToSecondStage(robot, sample, intermediate, z_safe=z_safe, delay=delay)
+    tubes.samplesToIntermediate()
         
     
 
@@ -736,11 +1061,11 @@ def elute(robot, sample, eluent, volume, settings,
     sample.setVolume(volume)
     return elution_start_time
 
-def eluteAllSamples(robot, samples_list, eluent, V_eluent_list, settings, 
+def eluteAllSamples(robot, settings, tubes,
                     mix_delay=0.5, safe_z=50, pipetting_delay=1.0):
     counter = 0
-    for sample, V_eluent in zip(samples_list, V_eluent_list):
-        ts = elute(robot, sample, eluent, V_eluent, settings, 
+    for sample, V_eluent in zip(tubes.samples_list, settings.eluent_vol_list):
+        ts = elute(robot, sample, tubes.eluent, V_eluent, settings, 
                    mix_delay=mix_delay, safe_z=safe_z, pipetting_delay=pipetting_delay)
         if counter == 0:
             elution_start_timestamp = ts
@@ -770,7 +1095,7 @@ def separateEluateAllTubes(robot, eluate_list, results_list, pipette_delay=1.0):
         separateEluate(robot, sample, result, pipette_delay=pipette_delay)
 
 
-def elution(robot, settings, samples_list, result_list, water):
+def elution(robot, settings, tubes):
     """
     Call this function in the protocol
     """
@@ -780,11 +1105,11 @@ def elution(robot, settings, samples_list, result_list, water):
     logging.info("Now adding the eluent to all the samples.")
     # Setting the pipette speed for the eluent solution (usually water)
     robot.setSpeedPipette(s.eluent_pipetting_speed)
-    elution_start_timestamp = eluteAllSamples(robot, samples_list, water, s.eluent_vol_list, 
-                                              settings, pipetting_delay=s.pipetting_delay)
+    elution_start_timestamp = eluteAllSamples(robot, 
+                                              settings, tubes, pipetting_delay=s.pipetting_delay)
     logging.info("Eluent added to all the samples.")
     logging.info("Now mixing the samples...")
-    mixManySamples(robot, samples_list, elution_start_timestamp, settings)
+    mixManySamples(robot, tubes.samples_list, elution_start_timestamp, settings)
     logging.info("Mixing finished.")
     
     # Pulling beads to the side
@@ -795,7 +1120,7 @@ def elution(robot, settings, samples_list, result_list, water):
     
     # Moving eluate to the results tubes
     logging.info("Now moving the eluates to their fresh tubes...")
-    separateEluateAllTubes(robot, samples_list, result_list, pipette_delay=s.pipetting_delay)
+    separateEluateAllTubes(robot, tubes.samples_list, tubes.result_list, pipette_delay=s.pipetting_delay)
     logging.info("Eluate transfer complete.")
     robot.setSpeedPipette(s.default_pipette_speed) # Resetting the max pipette speed
 
@@ -807,20 +1132,17 @@ def purify_one_cutoff(robot, settings):
     Call this function to perform an entire purification
     """
     s = settings
-    # Loading settings
-    samples_list = initSamples(robot, s)
-    result_list = initResultTubes(robot, s)
-    beads, waste, water, EtOH80pct = initReagents(robot, s)
+    tubes = items(robot, settings) # Initializing samples and reagents
     
     logging.info("This is the one-stage magnetic beads purification.")
     logging.info("It will remove any DNA and other molecules of low molecular weight.")
-    logging.info("I will purify "+str(len(samples_list))+" samples")
+    logging.info("I will purify %s samples." % tubes.number_of_samples)
     logging.info("I will use %s uL of magnetic beads to purify." % (s.beads_vol_1st_stage_list, ))
     logging.info("I will elute the resulting DNA with %s uL of eluent" % (s.V_eluent, ))
     
     # Starting the physical protocol
     logging.info("Now adding magnetic beads...")
-    timestamp_beads_added = addBeadsToAll(robot, samples_list, s.beads_vol_1st_stage_list, beads, 
+    timestamp_beads_added = addBeadsToAll(robot, tubes, s.beads_vol_1st_stage_list,  
                                           pipetting_speed=s.beads_pipetting_speed, 
                                           delay=s.pipetting_delay)
     logging.info("Beads addition complete.")
@@ -828,7 +1150,7 @@ def purify_one_cutoff(robot, settings):
     
     
     # Extra mixing samples with magnetic beads during the protocol.
-    mixManySamples(robot, samples_list, timestamp_beads_added, s)
+    mixManySamples(robot, tubes.samples_list, timestamp_beads_added, settings)
     
     # Pulling beads to the side
     logging.info("DNA absorption complete.")
@@ -840,15 +1162,15 @@ def purify_one_cutoff(robot, settings):
     logging.info("Beads are now on the side of the tube.")
     logging.info("Now removing the supernatant...")
     # Setting the pipette speed for the viscous beads supernatant
-    ts = removeSupernatantAllSamples(robot, samples_list, waste, s.beads_pipetting_speed, 
+    ts = removeSupernatantAllSamples(robot, tubes.samples_list, tubes.waste, s.beads_pipetting_speed, 
                                      fast=True, delay=s.pipetting_delay)
     logging.info("Supernatant removed from all the tubes.")
     
     # Ethanol wash.
-    ethanolWash(robot, s, samples_list, EtOH80pct, waste)
+    ethanolWash(robot, s, tubes.samples_list, tubes.ethanol, tubes.waste)
 
     # Elution
-    elution(robot, s, samples_list, result_list, water)
+    elution(robot, settings, tubes)
     
     logging.info("One-stage purification finished.")
     
@@ -861,14 +1183,11 @@ def purifyTwoCutoffs(robot, settings):
     """
     # Loading settings
     s = settings
-    samples_list = initSamples(robot, s)
-    intermediate_list = initIntermediate(robot, s) # Tubes at which the 2nd stage is performed.
-    result_list = initResultTubes(robot, s)
-    beads, waste, water, EtOH80pct = initReagents(robot, s)
+    tubes = items(robot, settings) # Initializing samples and reagents
 
     logging.info("This is the two-stage magnetic beads purification.")
     logging.info("It will remove any DNA and other molecules of too low and too high molecular weight.")
-    logging.info("I will purify "+str(len(samples_list))+" samples")
+    logging.info("I will purify %s samples." % tubes.number_of_samples)
     logging.info("I will first use %s uL of magnetic beads for the long DNA cutoff, " % (s.beads_vol_1st_stage_list, ))
     logging.info("and then use %s uL of magnetic beads for the short DNA cutoff, " % (s.beads_vol_2nd_stage_list, ))
     logging.info("I will elute the resulting DNA with %s uL of eluent" % (s.V_eluent, ))
@@ -882,14 +1201,14 @@ def purifyTwoCutoffs(robot, settings):
     logging.info("Starting the purification.")
     logging.info("------")
     logging.info("Now adding the %s uL of magnetic beads to the corresponding samples for the long DNA cutoff..." % (s.beads_vol_1st_stage_list, ))
-    timestamp_beads_added = addBeadsToAll(robot, samples_list, s.beads_vol_1st_stage_list, beads,
+    timestamp_beads_added = addBeadsToAll(robot, tubes, s.beads_vol_1st_stage_list,
                                           pipetting_speed=s.beads_pipetting_speed, 
                                           delay=s.pipetting_delay)
     logging.info("Beads added to the samples.")
     
     logging.info("Now waiting for the DNA absorption...")
     # Extra mixing samples with magnetic beads during the protocol.
-    mixManySamples(robot, samples_list, timestamp_beads_added, s)
+    mixManySamples(robot, tubes.samples_list, timestamp_beads_added, settings)
     logging.info("DNA absorption finished.")
     
     
@@ -902,7 +1221,7 @@ def purifyTwoCutoffs(robot, settings):
     
     # Transferring to the intermediary tubes
     logging.info("Now transferring the samples to the fresh tubes for the small molecules removal...")
-    transferAllSamplesToSecondStage(robot, samples_list, intermediate_list)
+    transferAllSamplesToSecondStage(robot, tubes)
     
     
     # After tubes are transferred, moving magnets away.
@@ -913,14 +1232,14 @@ def purifyTwoCutoffs(robot, settings):
     # Second cutoff
     # -------------
     logging.info("Now adding the %s uL of magnetic beads to the samples for the small molecule removal..." % (s.beads_vol_2nd_stage_list, ))
-    timestamp_beads_added = addBeadsToAll(robot, intermediate_list, s.beads_vol_2nd_stage_list, beads, 
+    timestamp_beads_added = addBeadsToAll(robot, tubes, s.beads_vol_2nd_stage_list, 
                                           pipetting_speed=s.beads_pipetting_speed, 
                                           delay=s.pipetting_delay)
     logging.info("Beads added to the samples.")
     
     # Extra mixing samples with magnetic beads during the protocol.
     logging.info("Now waiting for the DNA absorption...")
-    mixManySamples(robot, intermediate_list, timestamp_beads_added, s)
+    mixManySamples(robot, tubes.samples_list, timestamp_beads_added, settings, tubes)
     logging.info("DNA absorption finished.")
     
     # Pulling beads to the side
@@ -932,11 +1251,11 @@ def purifyTwoCutoffs(robot, settings):
     logging.info("Beads are now pulled to the side of the tubes.")
     
     # Removing supernatant (the desired DNA of larger molecular weight is on the beads)
-    ts = removeSupernatantAllSamples(robot, intermediate_list, waste, s.beads_pipetting_speed, 
+    ts = removeSupernatantAllSamples(robot, tubes.samples_list, tubes.waste, s.beads_pipetting_speed, 
                                      fast=True, delay=s.pipetting_delay)
     
-    ethanolWash(robot, s, intermediate_list, EtOH80pct, waste)
-    elution(robot, s, intermediate_list, result_list, water)
+    ethanolWash(robot, s, tubes.samples_list, tubes.ethanol, tubes.waste)
+    elution(robot, settings, tubes)
     
     logging.info("Two-stage purification finished.")
     
