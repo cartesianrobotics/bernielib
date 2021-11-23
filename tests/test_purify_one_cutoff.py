@@ -4,6 +4,7 @@ import mock
 import logging
 import csv
 import time
+from datetime import timedelta
 from shutil import copyfile
 import bernielib
 
@@ -11,6 +12,7 @@ import purify as ponec
 import bernielib as bl
 
 from mock import patch
+from unittest.mock import ANY
 
 #TODO: Beads volume for the first stage must be less than for the second stage.
 
@@ -913,7 +915,97 @@ class purify_protocol_test_case(unittest.TestCase):
             self.assertEqual(call[2]['delay'], 1.0)
         
 
+    @patch('purify.bl.robot.move')
+    def test_moveToSafe(self, mock_move):
+        p = ponec.protocol(self.ber, self.settings)
+        p.moveToSafe()
+        mock_move.assert_called_with(z=self.settings.z_safe)
 
+    @patch('purify.bl.robot.move')
+    @patch('purify.bl.robot.moveAxisDelta')
+    @patch('purify.bl.robot.dumpTipToWaste')
+    @patch('purify.bl.robot.pickUpNextTip')
+    @patch('purify.bl.robot.mixByScript')
+    def test_mixManySamples(self, mock_mix, mock_pickUpNextTip, mock_dumpTipToWaste, 
+            mock_moveAxisDelta, mock_move):
+        p = ponec.protocol(self.ber, self.settings)
+        p.mixManySamples()
+        for call, expected_sample in zip(mock_mix.mock_calls, p.tubes.samples_list):
+            self.assertEqual(call[1][0], expected_sample)
+        
+    def test_getAlreadyWaitedTime(self):
+        p = ponec.protocol(self.ber, self.settings)
+        p.timestamp = time.time()
+        time.sleep(0.05)
+        result = p.getAlreadyWaitedTime()
+        self.assertTrue(result > 0.05)
+        self.assertTrue(result < 0.07)
+        
+    def test_getDelayBetweenActions(self):
+        p = ponec.protocol(self.ber, self.settings)
+        r = p.getDelayBetweenActions(100, 0)
+        self.assertEqual(r, 100)
+        r = p.getDelayBetweenActions(100, 1)
+        self.assertEqual(r, 50)
+        r = p.getDelayBetweenActions(100, -1)
+        self.assertEqual(r, 100)
+
+    @patch('purify.protocol.mixManySamples')
+    def test_incubate(self, mock_mixManySamples):
+        p = ponec.protocol(self.ber, self.settings)
+        p.timestamp = time.time()
+        local_timestamp = time.time()
+        time_to_wait = 0.05
+        p.incubation_time = time_to_wait
+        p.incubate()
+        time_waited = time.time() - local_timestamp
+        
+        self.assertTrue(time_waited > time_to_wait)
+        self.assertTrue(time_waited < time_to_wait+0.2)
+
+
+    @patch('purify.protocol.pullBeads')
+    @patch('purify.protocol.mixManySamples')
+    @patch('purify.protocol.addBeads')
+    def test_absorbDNAOntoBeads_incubation(self, mock_addBeads, mock_mixManySamples,
+            mock_pullBeads):
+        p = ponec.protocol(self.ber, self.settings)
+        p.timestamp = time.time()
+        local_timestamp = time.time()
+        time_to_wait = 0.05
+        # Temporarily overwriting the setting
+        p.settings.T_absorption = time_to_wait
+        
+        p.absorbDnaOntoBeads()
+        
+        time_waited = time.time() - local_timestamp
+        
+        self.assertTrue(time_waited > time_to_wait)
+        self.assertTrue(time_waited < time_to_wait+0.2)
+        mock_mixManySamples.is_called()
+
+    
+    # TODO: Make a general function for testing the time waited.
+    @patch('purify.protocol.transferLiquidManyTubes')
+    @patch('purify.protocol.pullBeads')
+    @patch('purify.protocol.mixManySamples')
+    @patch('purify.protocol.addEluentToAll')
+    @patch('purify.bl.robot.setSpeedPipette')
+    def test_elution_incubation(self, mock_setSpeedPipette, mock_addEluentToAll,
+            mock_mixManySamples, mock_pullBeads, mock_transferLiquidManyTubes):
+        p = ponec.protocol(self.ber, self.settings)
+        p.timestamp = time.time()
+        local_timestamp = time.time()
+        time_to_wait = 0.05
+        # Temporarily overwriting the setting
+        p.settings.T_elute = time_to_wait
+        
+        p.elution()
+        
+        time_waited = time.time() - local_timestamp
+        self.assertTrue(time_waited > time_to_wait)
+        self.assertTrue(time_waited < time_to_wait+0.2)
+        mock_mixManySamples.is_called()
 
 if __name__ == '__main__':
     unittest.main()

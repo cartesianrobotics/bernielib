@@ -166,7 +166,7 @@ class settings():
         self.T_wash_2 = self.returnProtocolParameter('Second stage ethanol wash time') * 60.0
         self.T_dry = self.returnProtocolParameter('Time to dry after ethanol wash') * 60.0
         self.T_elute = self.returnProtocolParameter('Elution time') * 60.0
-        self.T_absoprtion = self.returnProtocolParameter('DNA absorption time') * 60.0
+        self.T_absorption = self.returnProtocolParameter('DNA absorption time') * 60.0
         
         # Robot geometry settings
         self.z_safe = 50.0  # Height at which it is safe to move at any x,y coordinate.
@@ -402,7 +402,7 @@ class protocol():
 
     
     def moveToSafe(self):
-        self.robot.move(self.settings.z_safe)
+        self.robot.move(z=self.settings.z_safe)
     
     def dumpTip(self):
         """
@@ -502,11 +502,16 @@ class protocol():
         # all the liquid from the source will be transferred to destination.
         if v_list is None:
             v_list = [None for x in sources]
+        counter = 0 # Know whether this is the first tube processed now.
         for s, d, v in zip(sources, destinations, v_list):
             if sterile:
                 self.transferLiquidSterile(s, d, v, touch_wall=touch_wall)
             else:
                 self.transferLiquid(s, d, v, touch_wall=touch_wall)
+            if counter == 0:
+                # Timestamp for incubation is set after the pipetting is done for the 1st tube.
+                self.timestamp = time.time()    
+            counter += 1
         self.robot.setSpeedPipette(self.default_pipette_speed)
 
 
@@ -533,6 +538,8 @@ class protocol():
 
     def absorbDnaOntoBeads(self):
         self.addBeads()
+        # Setting the incubation time for the following incubation function
+        self.incubation_time = self.settings.T_absorption
         self.incubate(times_to_mix=self.settings.absorption_times_to_mix)
         self.pullBeads(pull_time=self.settings.T_pull)
         
@@ -651,8 +658,12 @@ class protocol():
     def addEluentToAll(self):
         self.timestamp = time.time()
         logging.info("Now adding the eluent to all the samples.")
+        counter = 0
         for sample, v_eluent in zip(self.tubes.samples_list, self.settings.eluent_vol_list):
             self.addEluent(sample, self.tubes.eluent, v_eluent)
+            if counter == 0:
+                # Start counting time after the first tube receives eluent.
+                self.timestamp = time.time()
         logging.info("Eluent added to all the samples.")
     
     def elution(self):

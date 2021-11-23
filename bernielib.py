@@ -523,7 +523,7 @@ class robot(data):
         # Initial move (fast)
         self.pipetteMove(self._getDumpTipPlungerMovement()-15, speed=self._getSetting("speed_pipette"))
         # Move slowly to hit the tip (stepper may skip steps if moved fast)
-        self.pipetteMove(self._getDumpTipPlungerMovement(), speed=1000)
+        self.pipetteMove(self._getDumpTipPlungerMovement(), speed=700)
         self.tip_attached = 0
         self.pipetteMove(1)
         self.pipetteServoUp()
