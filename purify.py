@@ -613,6 +613,7 @@ class protocol():
         if volume is None:
             volume = sample.getVolume()
         self.robot.uptakeLiquid(sample, volume, lag_vol=5)
+        # The previous line also sets value of the sample to 0. Remember to set it back.
         time.sleep(self.settings.pipetting_delay)
         
         # Washing steps, releasing liquid while moving along the wall
@@ -628,6 +629,9 @@ class protocol():
         else:
             self.washingBeadsFromWallDuringElution(sample, 3.4, 5.0, volume+50, 
                         self.settings.pipetting_delay)
+        
+        # Liquid was returned back to the tube, so I am manually correcting the sample volume
+        sample.setVolume(volume)
         
         # Moving back to center, above liquid
         x, y = sample.getCenterXY()
@@ -666,11 +670,24 @@ class protocol():
                 self.timestamp = time.time()
         logging.info("Eluent added to all the samples.")
     
+
+    def addEluent_temp(self):
+        """
+        Fills all the tubes with eluent after the ethanol evaporation stage.
+        Does not mix the beads. You need to call mixing functions after that.
+        """
+        destinations = self.tubes.samples_list
+        sources = [self.tubes.eluent for x in destinations]
+        self.transferLiquidManyTubes(sources, destinations, self.settings.eluent_vol_list, 
+                touch_wall=False, sterile=False, pipette_speed=self.settings.eluent_pipetting_speed)
+
+    
     def elution(self):
         logging.info("Now eluting the DNA from the samples.")
         # Setting the pipette speed for the eluent solution (usually water)
         self.robot.setSpeedPipette(self.settings.eluent_pipetting_speed)
         # Adding eluent
+        #self.addEluent()
         self.addEluentToAll()
         self.incubation_time = self.settings.T_elute
         self.incubate(times_to_mix=self.settings.elution_times_to_mix)
