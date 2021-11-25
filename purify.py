@@ -653,11 +653,11 @@ class protocol():
         self.transferLiquid(eluent, sample, volume)
         
         for i in range(self.settings.elution_times_to_mix):
-            self.elutionMix(sample, how='high')
-            self.elutionMix(sample, how='high')
-            self.elutionMix(sample, how='low')
-        self.elutionMix(sample, how='low')
-        self.elutionMix(sample, how='low')
+            self.elutionMix(sample, volume=volume, how='high')
+            self.elutionMix(sample, volume=volume, how='high')
+            self.elutionMix(sample, volume=volume, how='low')
+        self.elutionMix(sample, volume=volume, how='low')
+        self.elutionMix(sample, volume=volume, how='low')
         
         self.dumpTip()
         
@@ -689,7 +689,6 @@ class protocol():
         # Setting the pipette speed for the eluent solution (usually water)
         self.robot.setSpeedPipette(self.settings.eluent_pipetting_speed)
         # Adding eluent
-        #self.addEluent()
         self.addEluentToAll()
         self.incubation_time = self.settings.T_elute
         self.incubate(times_to_mix=self.settings.elution_times_to_mix_during_incubation)
