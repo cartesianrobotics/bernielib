@@ -126,6 +126,8 @@ class settings():
         self.eluent_pipetting_speed = self.returnProtocolParameter('Eluent pipetting speed')
         self.elution_times_to_mix = int(self.returnProtocolParameter('Elution times to mix'))
         self.absorption_times_to_mix = int(self.returnProtocolParameter('Times to mix while absorbing'))
+        self.elution_times_to_mix_during_incubation = int(self.returnProtocolParameter(
+                'Times to mix while eluting'))
         self.initial_sample_vol_list = self._returnSampleParameterList('Initial sample volume')
         self.number_of_samples = len(self.initial_sample_vol_list)
         self.positions_to_purify_list = self.positionsToPurify()
@@ -690,7 +692,7 @@ class protocol():
         #self.addEluent()
         self.addEluentToAll()
         self.incubation_time = self.settings.T_elute
-        self.incubate(times_to_mix=self.settings.elution_times_to_mix)
+        self.incubate(times_to_mix=self.settings.elution_times_to_mix_during_incubation)
         self.robot.setSpeedPipette(self.settings.default_pipette_speed) # Resetting the max pipette speed
         
         self.pullBeads(self.settings.T_pull)
