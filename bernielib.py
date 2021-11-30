@@ -106,6 +106,8 @@ class robot(data):
         self.last_tip_coord = None
         # Pressure sensors zeroed near tips
         self.load_cells_zeroed_near_tips = False
+        # Whether to calculate wall touch Z relative to the liquid level
+        self.touch_above_liquid = False
         
     
     def close(self):
@@ -209,7 +211,9 @@ class robot(data):
             #time_passed = current_timestamp - before_timestamp
             #print("reading... Obtained message: %s" % message)
         
-        logging.info("Message received from the robot: %s", message)
+        if message:
+            # Logging only if the message has something.
+            logging.debug("Message received from the robot: %s", message)
         return message
     
     
@@ -224,7 +228,7 @@ class robot(data):
             time_passed = current_timestamp - before_timestamp
             if re.search(pattern=pattern, string=message):
                 self.recent_message = message
-                logging.info("Confirmed full message from the robot: %s", self.recent_message)
+                logging.debug("Confirmed full message from the robot: %s", self.recent_message)
                 return self.recent_message
             if time_passed > timeout:
                 # Timeout triggered, return None
@@ -243,7 +247,7 @@ class robot(data):
         expression = expression + eol
         expr_enc = expression.encode()
         port.write(expr_enc)
-        logging.info("Message sent to the robot: %s", expression)
+        logging.debug("Message sent to the robot: %s", expression)
     
         
     def writeLoadCell(self, expression):
@@ -1014,7 +1018,8 @@ class robot(data):
             self.movePipetteToVolume(0)
         
 
-    def touchWall(self, sample, V_touch=None, touch_liquid=False, x=0, y=0, z=None, move_up_after=False):
+    def touchWall(self, sample, V_touch=None, touch_liquid=False, x=0, y=0, z=None, move_up_after=False,
+            touch_above_liquid=False):
         """
         Touches the wall of the tube. After pipetting, there might be a liquid drop hanging on the tip.
         This allows to touch a tube, so the drop is left on it.
@@ -1036,8 +1041,12 @@ class robot(data):
                 Default is None, in which case the V_touch is used to calculate Z coordinate. 
                 Positive value means inside the tube; 0 means at the top of the tube. Negative values are forbidden.
                 Overrides specified V_touch or touch_liquid parameter
+            touch_above_liquid
+                Will touch the wall that mm above the current liquid level.
         """
         
+        if touch_above_liquid:
+            self.touch_above_liquid = touch_above_liquid
         # Now figuring out height at which to touch
         if z is not None:
             # Overriding other settings if z is explicitly provided
@@ -1065,7 +1074,13 @@ class robot(data):
             # Move this value as a separate setting for the sample type
             z = sample.calcAbsLiquidLevelFromVol(sample.stype.getMaxVolume()-100, 
                                                 added_length=self._calcExtraLength())
-
+        
+        if self.touch_above_liquid:
+            z_liquid = sample.calcAbsLiquidLevelFromVol(sample.getVolume(), 
+                            added_length=self._calcExtraLength())
+            z = z_liquid - touch_above_liquid
+            
+            
         # Now figuring out coordinates x and y at which to touch
         if x == 0 and y == 0:
             # If nothing is provided, taking them from sample type diameter settings
@@ -1221,7 +1236,7 @@ class robot(data):
             d = step_params.delay
 
             # Do I need to skip this step entirely?
-            if v_in > condition_v_min and v_in < condition_v_max:
+            if v_in >= condition_v_min and v_in <= condition_v_max:
                 # Performing the step
                 # Figuring out absolute Z of the operation. If necessary, will probe the tube bottom.
                 if h_relative_to == 'top':

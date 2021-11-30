@@ -118,6 +118,7 @@ class settings():
         self.tip_rack_type = self.returnProtocolParameter('Tip Rack Type')
         self.load_cell_port = self.returnPort(kind='Load cells controller port')
         self.cartesian_port = self.returnPort(kind='Cartesian controller port')
+        self.cleanups = self.returnProtocolParameter('Number of cleanups')
         self.cutoffs = self.returnProtocolParameter('Number of cutoffs')
         self.pipetting_delay = self.returnProtocolParameter('Delay after pipetting')
         self.default_pipette_speed = self.returnProtocolParameter('Maximum pipetting speed')
@@ -132,6 +133,7 @@ class settings():
         self.number_of_samples = len(self.initial_sample_vol_list)
         self.positions_to_purify_list = self.positionsToPurify()
         self.positions_2nd_stage_tubes = self.positionsToPurify2ndStage()
+        self.tip_box_is_refilled = self.returnProtocolParameter('Tip box refilled')
         
         self.beads_tube_type = self._getTubeType('Beads')
         self.waste_tube_type = self._getTubeType('Waste')
@@ -325,6 +327,10 @@ class items():
         self.number_of_samples = self.settings.number_of_samples
         self.cutoffs = self.settings.cutoffs
         
+        self.refillTipBox()
+        
+        self.result_column = 0
+        self.result_row = 0
         # Initializing samples
         self.samples_list = self.initSamples()
         self.intermediate_list = self.initIntermediate()
@@ -351,7 +357,8 @@ class items():
             return
     
     def initResults(self):
-        return bl.createPurifiedSamplesList(self.robot, self.number_of_samples)
+        return bl.createPurifiedSamplesList(self.robot, self.number_of_samples, 
+                        row_start=self.result_row, column=self.result_column)
 
     def getRack(self, rack_name, reagent_name):
         if rack_name == 'samples':
@@ -386,8 +393,14 @@ class items():
         
         self.samples_list = self.intermediate_list
         
-
-
+    def refillTipBox(self):
+        if self.settings.tip_box_is_refilled:
+            self.robot.tips_rack.refill()
+            logging.info("Tip box was freshly refilled.")
+        else:
+            logging.info("Tip box was not refilled.")
+        next_tip_position = self.robot.tips_rack.next(consume=False)
+        logging.info("I will pick up the next tip at the column %s, row %s." % next_tip_position)
 
 
 class protocol():
@@ -401,6 +414,11 @@ class protocol():
         self.step = 'not started'
         self.incubation_time = 0  # Incubation time (in seconds)
         self.default_pipette_speed = self.robot.getSpeedPipette()
+        
+        # Settings for the robot that will be valid all the way during the operation.
+        self.robot.touch_above_liquid = 5 # mm; Height above the liquid at which 
+            # the robot will touch the side of the tube to drop a remaining liquid 
+            # from the end of the tip.
 
     
     def moveToSafe(self):
@@ -705,17 +723,58 @@ class protocol():
 
     def purify(self):
         logging.info("This is the %s-stage magnetic beads purification." % self.settings.cutoffs)
+        logging.info("I will repeat this purification %s times." % self.settings.cleanups)
         
-        self.absorbDnaOntoBeads()   # First stage
+        if self.settings.cleanups == 2:
+            # Two cleanups
+            self.absorbDnaOntoBeads()   # First stage
         
-        # Checking if this is a two-stage cutoff
-        if self.settings.cutoffs == 2:
-            self.transferSamplesToSecondStage()
-            self.absorbDnaOntoBeads()   # Second stage
+            # Checking if this is a two-stage cutoff
+            if self.settings.cutoffs == 2:
+                self.transferSamplesToSecondStage()
+                self.absorbDnaOntoBeads()   # Second stage
         
-        self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
-        self.ethanolWash()
-        self.elution()
+            self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
+            self.ethanolWash()
+            
+            # Reinitializing the results tubes, so they are in position near the magnets
+            self.tubes.result_column = 1
+            self.tubes.result_row = 6
+            self.tubes.result_list = self.tubes.initResults()
+            self.elution()  # Eluting for the second purification
+            
+            # Now freshly eluted results are the new samples
+            self.tubes.samples_list = self.tubes.result_list
+            # Second cleanup
+            self.absorbDnaOntoBeads()   # First stage
+        
+            # Checking if this is a two-stage cutoff
+            if self.settings.cutoffs == 2:
+                self.transferSamplesToSecondStage()
+                self.absorbDnaOntoBeads()   # Second stage
+        
+            self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
+            self.ethanolWash()
+            
+            # Reinitializing the results tubes, so they are in position away from the magnets
+            self.tubes.result_column = 0
+            self.tubes.result_row = 0
+            self.tubes.result_list = self.tubes.initResults()
+            
+            self.elution()  # Eluting for the second purification
+            
+        else:
+            # One cleanup
+            self.absorbDnaOntoBeads()   # First stage
+        
+            # Checking if this is a two-stage cutoff
+            if self.settings.cutoffs == 2:
+                self.transferSamplesToSecondStage()
+                self.absorbDnaOntoBeads()   # Second stage
+        
+            self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
+            self.ethanolWash()
+            self.elution()
         
         logging.info("%s-stage purification finished." % self.settings.cutoffs)
         

@@ -426,7 +426,7 @@ def createSamplesToPurifyList(robot, volume_list=None, position_list=None,
     return sample_list
     
 
-def createPurifiedSamplesList(robot, number, row_start=0):
+def createPurifiedSamplesList(robot, number, row_start=0, column=0):
     type_name = 'eppendorf'
     rack = robot.samples_rack
     
@@ -436,7 +436,7 @@ def createPurifiedSamplesList(robot, number, row_start=0):
     for i in range(number):
         sample_name = 'purified'+str(sample_counter)
         # Starting with 0 volume, liquid will be there after purification.
-        s = createSample(type_name, sample_name, rack, pos_col=0, pos_row=row_start, volume=0)
+        s = createSample(type_name, sample_name, rack, pos_col=column, pos_row=row_start, volume=0)
         sample_list.append(s)
         sample_counter += 1
         row_start += 1 # Every next sample is occupying a new row
