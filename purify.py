@@ -81,9 +81,14 @@ class settings():
         return positions_list
     
     def positionsToPurify2ndStage(self):
+        # Where are the tubes that would be used for the second stage?
+        if self.cleanups == 2:
+            second_stage_shift = 3 # 3 tubes apart, for 2 cleanups
+        else:
+            second_stage_shift = 6 # 6 tubes apart, for 1 cleanup
         sample_positions_list = self.positionsToPurify()
         # First tube for the second stage purification is at position '6'.
-        pos_2nd_stage_list = [x+6 for x in sample_positions_list]
+        pos_2nd_stage_list = [x+second_stage_shift for x in sample_positions_list]
         return pos_2nd_stage_list
     
     def returnSampleParameter(self, param, position):

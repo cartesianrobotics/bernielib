@@ -523,11 +523,12 @@ class robot(data):
         """
         Dumps the tip at current XYZ position.
         """
+        speed_pipette_at_tip_discard = self._getSetting('speed_pipette_at_tip_discard')
         self.pipetteServoDown()
         # Initial move (fast)
         self.pipetteMove(self._getDumpTipPlungerMovement()-15, speed=self._getSetting("speed_pipette"))
         # Move slowly to hit the tip (stepper may skip steps if moved fast)
-        self.pipetteMove(self._getDumpTipPlungerMovement(), speed=700)
+        self.pipetteMove(self._getDumpTipPlungerMovement(), speed=speed_pipette_at_tip_discard)
         self.tip_attached = 0
         self.pipetteMove(1)
         self.pipetteServoUp()
@@ -1078,7 +1079,7 @@ class robot(data):
         if self.touch_above_liquid:
             z_liquid = sample.calcAbsLiquidLevelFromVol(sample.getVolume(), 
                             added_length=self._calcExtraLength())
-            z = z_liquid - touch_above_liquid
+            z = z_liquid - self.touch_above_liquid
             
             
         # Now figuring out coordinates x and y at which to touch
