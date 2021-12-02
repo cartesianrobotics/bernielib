@@ -731,6 +731,9 @@ class protocol():
         self.tubes.result_column = 1
         self.tubes.result_row = 6
         self.tubes.result_list = self.tubes.initResults()
+        # At first purification, I am eluting with the same volume as the initial sample volume.
+        # This way, for the second purification, the volume of beads are valid and won't change.
+        self.settings.eluent_vol_list = self.settings.initial_sample_vol_list
     
     def _reinitializeTubesForSecondCleanup(self):
         # Now freshly eluted results are the new samples
@@ -744,6 +747,8 @@ class protocol():
         self.tubes.result_column = 0
         self.tubes.result_row = 0
         self.tubes.result_list = self.tubes.initResults()
+        # Setting the final elution volume, according to the samplesheet.
+        self.settings.eluent_vol_list = self.settings._returnSampleParameterList('Elution volume')
 
     def purify_once(self):
         self.absorbDnaOntoBeads()   # First stage
