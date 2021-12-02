@@ -1,0 +1,58 @@
+Parameters,Comments,0,1,2,3,4,5,6,7,8,9,10,11,12
+Text line,Take extra care to setup “initial sample volume” and specify which size of DNA to preserve. The rest of the parameters are standard and rarely changed.,,,,,,,,,,,,,
+,,,,,,,,,,,,,,
+Number of cleanups,"Put ""2"" if you need the robot to re-purify freshly eluted DNA with the same parameters (helps increase purity). Otherwise put ""1"". Only 6 samples at a time for 1 cutoff, or 3 at a time for 2 cutoffs.",2,,,,,,,,,,,,
+Number of cutoffs, enter “2” if you want to remove both too short and too long strands.,2,,,,,,,,,,,,
+Tip box refilled,"If you placed a new tip box before the purification, select “1”. If partially used tip box remains from the previous purification, select “0”.",0,,,,,,,,,,,,
+Beads initial volume,uL. How much of the beads is present,4500,,,,,,,,,,,,
+Eluent volume,"uL. How much of the eluent is present. If value is < 0, the value from a previous experiment is used (careful, as liquid could evaporate)",25000,,,,,,,,,,,,
+Ethanol volume,"uL. How much of the ethanol is present. If value is < 0, the value from a previous experiment is used (careful, as liquid could evaporate)",25000,,,,,,,,,,,,
+Initial sample volume,"Samples with values <= 0 will not be purified, the rest of the parameters for those samples will be ignored",100,100,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+Elution volume,in uL,30,30,30,30,30,30,30,30,30,30,30,30,30
+,,,,,,,,,,,,,,
+DNA size cutoff,Will retain all DNA shorter than this value. Used if “fraction” or “bead volume” is not provided,250,150,300,0,0,0,0,0,0,0,0,0,0
+Fraction,"How much volume of the beads suspension to add, relative to the sample volume. Example: sample volume = 30 uL, fraction = 0.5, then 15 uL of beads suspension will be added. Overrides “DNA size cutoff” value, but is ignored if “beads volume” is provided.",1.5,1,0.7,0,0,0,0,0,0,0,0,0,0
+Beads volume,"How much volume of the beads suspension to add. If provided, overrides DNA size cutoff and Fraction.",140,110,67,0,0,0,0,0,0,0,0,0,0
+DNA size upper cutoff,Will retain all DNA longer than this value. Used if “fraction” or “bead volume” is not provided,850,750,600,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+Fraction upper cutoff,"How much volume of the beads suspension to add for the long DNA cutoff, relative to the sample volume. Example: sample volume = 30 uL, fraction = 0.5, then 15 uL of beads suspension will be added. Overrides “DNA size cutoff” value, but is ignored if “beads volume” is provided.",0.4,0.6,0.5,0,0,0,0,0,0,0,0,0,0
+Beads volume upper cutoff,"How much volume of the beads suspension to add for the long DNA cutoff. If provided, overrides DNA size cutoff and Fraction.",80,70,60,0,0,0,0,0,0,0,0,0,0
+,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,
+Perform initial checkup,"1=yes, 0=no. If “1”, the robot will perform initial checkup before physically starting the protocol. You can review the checkup result and chose to proceed or abort. Select “0” if you are sure all parameters are correct",0,,,,,,,,,,,,
+Beads tube type,"“eppendorf” for 1.5 mL eppendorf tube, ""5mL"", ""15mL"", ""25mL"", ""50mL"" for the corresponding tube type",5mL,,,,,,,,,,,,
+Beads tube rack,"Which rack is the tube found. Possible values are ""samples"" and ""reagents""",reagents,,,,,,,,,,,,
+Beads tube column,"always ""0"" for ""reagents"" rack, specify ""1"" for ""samples"" rack",0,,,,,,,,,,,,
+Beads tube well,,4,,,,,,,,,,,,
+Eluent tube type,"“ep” for 1.5 mL eppendorf tube, ""5mL"", ""15mL"", ""25mL"", ""50mL"" for the corresponding tube type",25mL,,,,,,,,,,,,
+Eluent tube rack,"Which rack is the tube found. Possible values are ""samples"" and ""reagents""",reagents,,,,,,,,,,,,
+Eluent tube position,,0,,,,,,,,,,,,
+Ethanol tube type,"“ep” for 1.5 mL eppendorf tube, ""5mL"", ""15mL"", ""25mL"", ""50mL"" for the corresponding tube type",25mL,,,,,,,,,,,,
+Ethanol tube rack,"Which rack is the tube found. Possible values are ""samples"" and ""reagents""",reagents,,,,,,,,,,,,
+Ethanol tube position,,2,,,,,,,,,,,,
+Waste tube type,,25mL,,,,,,,,,,,,
+Waste tube rack,,reagents,,,,,,,,,,,,
+Waste tube position,,1,,,,,,,,,,,,
+Waste volume,,0,,,,,,,,,,,,
+Sample tube type,“eppendorf” for 1.5 mL eppendorf tube,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf,eppendorf
+DNA absorption time,"How long to wait after adding the beads to the sample, in minutes. Count starts after initial mixing is done.",0.5,,,,,,,,,,,,
+Times to mix while absorbing,"While waiting for absorption, the robot will attempt to mix the samples this many times.",0,,,,,,,,,,,,
+Beads pulling time after absorption,"After beads are moved towards the sample, how long to wait for the beads to pull towards the side of the tube, in minutes. ",0.5,,,,,,,,,,,,
+First stage ethanol wash volume,in uL,200,200,200,200,200,200,200,200,200,200,200,200,200
+First stage ethanol wash time,in minutes,0.5,,,,,,,,,,,,
+Second stage ethanol wash volume,in uL,200,200,200,200,200,200,200,200,200,200,200,200,200
+Second stage ethanol wash time,in minutes,0.5,,,,,,,,,,,,
+Remove extra liquid with a fresh tip,"1=yes, 0=no",0,,,,,,,,,,,,
+Time to dry after ethanol wash,minutes,0.5,,,,,,,,,,,,
+,,,,,,,,,,,,,,
+Elution time,minutes,0.5,,,,,,,,,,,,
+Elution times to mix,How many times to repeat a mixing cycle. Put more if you notice robot is not properly resuspending the beads during elution.,1,,,,,,,,,,,,
+Times to mix while eluting,"While waiting for elution, the robot will attempt to mix the samples this many times.",0,,,,,,,,,,,,
+Load cells controller port,"Keep “auto” value unless you know what you are doing. Option to manually provide a port name, such as COM3. Useful if you have several serial port devices simultaneously connected to this computer. ",auto,,,,,,,,,,,,
+Cartesian controller port,"Keep “auto” value unless you know what you are doing. Option to manually provide a port name, such as COM3. Useful if you have several serial port devices simultaneously connected to this computer. ",auto,,,,,,,,,,,,
+Tip Rack Type,"Select “old” for a green rack, or “new” for the new rack from Mettler Toledo",old,,,,,,,,,,,,
+,,,,,,,,,,,,,,
+Delay after pipetting,"Seconds. After the pipette plunger finishes its movement, the robot will wait for this amount of time. Specify longer times if the robot starts moving before uptaking all the liquid",1,,,,,,,,,,,,
+Maximum pipetting speed,Do not change unless you know what you are doing. Lower this value if you notise the pipette stepper motor skips steps,2500,,,,,,,,,,,,
+Beads pipetting speed,Pipette speed when pipetting magnetic beads suspension,1500,,,,,,,,,,,,
+Ethanol pipetting speed,Pipette speed when pipetting ethanol,2000,,,,,,,,,,,,
+Eluent pipetting speed,Pipette speed when pipetting eluent and eluate,1800,,,,,,,,,,,,

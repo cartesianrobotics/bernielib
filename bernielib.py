@@ -425,7 +425,7 @@ class robot(data):
         return self._getSetting('added_tip_length')
 
 
-    def tipPickupAttempt(self, initial_force=100, final_force=1000):
+    def tipPickupAttempt(self, initial_force=100, final_force=500):
         wrong_hit_threshold = self.tips_rack.getProperPickupdZ()
         final_pickup_dist = self.tips_rack.getTipPickupdZ()
         

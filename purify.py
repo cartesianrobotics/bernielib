@@ -355,9 +355,10 @@ class items():
         return bl.createSamplesToPurifyList(self.robot, self.initial_sample_vol_list)
         
     def initIntermediate(self):
+        start_from_position = self.settings.positions_2nd_stage_tubes[0]
         if self.cutoffs == 2:
             return bl.createSamplesToPurifyList(self.robot, number_of_tubes=self.number_of_samples,
-                        start_from_position=6)
+                        start_from_position=start_from_position)
         else:
             return
     
@@ -725,62 +726,46 @@ class protocol():
                 pipette_speed=self.settings.eluent_pipetting_speed)
         logging.info("Eluate transfer complete.")
 
+    def _reinitializeTubesForFirstCleanup(self):
+        # Reinitializing the results tubes, so they are in position near the magnets
+        self.tubes.result_column = 1
+        self.tubes.result_row = 6
+        self.tubes.result_list = self.tubes.initResults()
+    
+    def _reinitializeTubesForSecondCleanup(self):
+        # Now freshly eluted results are the new samples
+        self.tubes.samples_list = self.tubes.result_list
+        # Initializing new intermediate tubes:
+        # Updating intermediate tubes position
+        self.settings.positions_2nd_stage_tubes = [x+6 for x in self.settings.positions_2nd_stage_tubes]
+        # Actual initialzation
+        self.tubes.intermediate_list = self.tubes.initIntermediate()
+        # Reinitializing the results tubes, so they are in position away from the magnets
+        self.tubes.result_column = 0
+        self.tubes.result_row = 0
+        self.tubes.result_list = self.tubes.initResults()
 
+    def purify_once(self):
+        self.absorbDnaOntoBeads()   # First stage
+        
+        # Checking if this is a two-stage cutoff
+        if self.settings.cutoffs == 2:
+            self.transferSamplesToSecondStage()
+            self.absorbDnaOntoBeads()   # Second stage
+        
+        self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
+        self.ethanolWash()
+        self.elution()
+    
     def purify(self):
         logging.info("This is the %s-stage magnetic beads purification." % self.settings.cutoffs)
         logging.info("I will repeat this purification %s times." % self.settings.cleanups)
         
         if self.settings.cleanups == 2:
-            # Two cleanups
-            self.absorbDnaOntoBeads()   # First stage
-        
-            # Checking if this is a two-stage cutoff
-            if self.settings.cutoffs == 2:
-                self.transferSamplesToSecondStage()
-                self.absorbDnaOntoBeads()   # Second stage
-        
-            self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
-            self.ethanolWash()
-            
-            # Reinitializing the results tubes, so they are in position near the magnets
-            self.tubes.result_column = 1
-            self.tubes.result_row = 6
-            self.tubes.result_list = self.tubes.initResults()
-            self.elution()  # Eluting for the second purification
-            
-            # Now freshly eluted results are the new samples
-            self.tubes.samples_list = self.tubes.result_list
-            # Second cleanup
-            self.absorbDnaOntoBeads()   # First stage
-        
-            # Checking if this is a two-stage cutoff
-            if self.settings.cutoffs == 2:
-                self.transferSamplesToSecondStage()
-                self.absorbDnaOntoBeads()   # Second stage
-        
-            self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
-            self.ethanolWash()
-            
-            # Reinitializing the results tubes, so they are in position away from the magnets
-            self.tubes.result_column = 0
-            self.tubes.result_row = 0
-            self.tubes.result_list = self.tubes.initResults()
-            
-            self.elution()  # Eluting for the second purification
-            
-        else:
-            # One cleanup
-            self.absorbDnaOntoBeads()   # First stage
-        
-            # Checking if this is a two-stage cutoff
-            if self.settings.cutoffs == 2:
-                self.transferSamplesToSecondStage()
-                self.absorbDnaOntoBeads()   # Second stage
-        
-            self.removeSupernatant(pipette_speed=self.settings.beads_pipetting_speed)
-            self.ethanolWash()
-            self.elution()
-        
+            self._reinitializeTubesForFirstCleanup()
+            self.purify_once()
+            self._reinitializeTubesForSecondCleanup()
+        self.purify_once()
         logging.info("%s-stage purification finished." % self.settings.cutoffs)
         
         

@@ -124,6 +124,9 @@ class purify_settings_test_case(unittest.TestCase):
         s = ponec.settings(self.mock_csv_path)
         positions = s.positionsToPurify2ndStage()
         self.assertEqual(positions, [6, 7, 8])
+        s.cleanups = 2
+        positions = s.positionsToPurify2ndStage()
+        self.assertEqual(positions, [3, 4, 5])
         self.delTempSettingsFile()
 
     @patch('purify.settings.loadIndividualSettings')
@@ -1006,6 +1009,25 @@ class purify_protocol_test_case(unittest.TestCase):
         self.assertTrue(time_waited > time_to_wait)
         self.assertTrue(time_waited < time_to_wait+0.2)
         mock_mixManySamples.is_called()
+
+    def test__reinitializeTubesForSecondCleanup(self):
+        p = ponec.protocol(self.ber, self.settings2)
+        p.settings.cleanups = 2
+        p.settings.positions_2nd_stage_tubes = p.settings.positionsToPurify2ndStage()
+        p.tubes.intermediate_list = p.tubes.initIntermediate()
+        p.tubes.result_column = 1
+        p.tubes.result_row = 6
+        p.tubes.result_list = p.tubes.initResults()
+        
+        self.assertEqual(p.settings.cleanups, 2)
+        self.assertEqual(p.tubes.samples_list[0].getWell(), (1,0))
+        self.assertEqual(p.tubes.intermediate_list[0].getWell(), (1,3))
+        
+        p._reinitializeTubesForSecondCleanup()
+
+        self.assertEqual(p.tubes.samples_list[0].getWell(), (1,6))
+        self.assertEqual(p.tubes.intermediate_list[0].getWell(), (1,9))
+        self.assertEqual(p.tubes.result_list[0].getWell(), (0,0))
 
 if __name__ == '__main__':
     unittest.main()
