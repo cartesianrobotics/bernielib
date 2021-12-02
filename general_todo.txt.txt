@@ -1,15 +1,1 @@
 General TODO.
-
-1. Two-stage purification
-2. Test 2-stage purification
-3. New tip rack
-	3.1 Design adapter
-	3.2 Add several tip racks handling to bernielib
-	3.3 Settings for the new tip rack
-	3.4 Calibration routine for new tip rack
-	3.5 Test that pick up functions respect new tip rack
-	3.6 Add settings that choses which rack to use.
-	3.7 Test entire protocol with new tip rack
-4. Calibration script
-5. Sample type definition script
-6. Firt run self-check script
