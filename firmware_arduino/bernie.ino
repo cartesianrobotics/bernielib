@@ -95,18 +95,24 @@ void loop() {
     else if (strcmp(command, "T L")==0)
     {
       sensor_l.tare();
+      Serial.println("ok/n");
     }
     else if (strcmp(command, "T R")==0)
     {
       sensor_r.tare();
+      Serial.println("ok/n");
     }
     else if (strcmp(command, "RL")==0)
     {
-      Serial.println(sensor_l.get_units()*-1.0);
+      // Uncomment for Bernie SN4; comment the line below
+      // Serial.println(sensor_l.get_units()*-1.0);
+      Serial.println(sensor_l.get_units());
     }
     else if (strcmp(command, "RR")==0)
     {
-      Serial.println(sensor_r.get_units()*-1.0);
+      // Uncomment for Bernie SN4; comment the line below
+      // Serial.println(sensor_l.get_units()*-1.0);
+      Serial.println(sensor_r.get_units());
     }
     else if (strcmp(command, "version")==0)
     {
