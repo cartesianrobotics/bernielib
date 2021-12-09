@@ -186,13 +186,16 @@ class robot(data):
     def portRecognizer(self, port_message_dict, expected_response_dict):
         robot_ports_dict = {}
         for port_name, return_message in port_message_dict.items():
-            if re.search(pattern=expected_response_dict['cartesian'], string=return_message):
-                robot_ports_dict['cartesian'] = port_name
-            elif re.search(pattern=expected_response_dict['loadcell'], string=return_message):
-                robot_ports_dict['loadcell'] = port_name
-            elif re.search(pattern=expected_response_dict['loadcell_alt1'], string=return_message):
-                robot_ports_dict['loadcell'] = port_name
-            else:
+            try:
+                if re.search(pattern=expected_response_dict['cartesian'], string=return_message):
+                    robot_ports_dict['cartesian'] = port_name
+                elif re.search(pattern=expected_response_dict['loadcell'], string=return_message):
+                    robot_ports_dict['loadcell'] = port_name
+                elif re.search(pattern=expected_response_dict['loadcell_alt1'], string=return_message):
+                    robot_ports_dict['loadcell'] = port_name
+                else:
+                    pass
+            except:
                 pass
         return robot_ports_dict
     
