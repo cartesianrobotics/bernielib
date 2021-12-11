@@ -3,7 +3,7 @@ Text line,Take extra care to setup “initial sample volume” and specify which siz
 ,,,,,,,,,,,,,,
 Number of cleanups,"Put ""2"" if you need the robot to re-purify freshly eluted DNA with the same parameters (helps increase purity). Otherwise put ""1"". Only 6 samples at a time for 1 cutoff, or 3 at a time for 2 cutoffs.",1,,,,,,,,,,,,
 Number of cutoffs,Enter “1” if you only need to remove short strands or small molecules; enter “2” if you want to remove both too short and too long strands.,1,,,,,,,,,,,,
-Tip box refilled,"If you placed a new tip box before the purification, select “1”. If partially used tip box remains from the previous purification, select “0”.",1,,,,,,,,,,,,
+Tip box refilled,"If you placed a new tip box before the purification, select “1”. If partially used tip box remains from the previous purification, select “0”.",0,,,,,,,,,,,,
 Beads initial volume,uL. How much of the beads is present,3500,,,,,,,,,,,,
 Eluent volume,"uL. How much of the eluent is present. If value is < 0, the value from a previous experiment is used (careful, as liquid could evaporate)",25000,,,,,,,,,,,,
 Ethanol volume,"uL. How much of the ethanol is present. If value is < 0, the value from a previous experiment is used (careful, as liquid could evaporate)",25000,,,,,,,,,,,,
