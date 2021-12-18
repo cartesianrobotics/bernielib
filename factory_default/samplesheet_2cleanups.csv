@@ -1,8 +1,8 @@
 Parameters,Comments,0,1,2,3,4,5,6,7,8,9,10,11,12
 Text line,Take extra care to setup “initial sample volume” and specify which size of DNA to preserve. The rest of the parameters are standard and rarely changed.,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,
-Number of cleanups,"Put ""2"" if you need the robot to re-purify freshly eluted DNA with the same parameters (helps increase purity). Otherwise put ""1"". Only 6 samples at a time for 1 cutoff, or 3 at a time for 2 cutoffs.",1,,,,,,,,,,,,
-Number of cutoffs, enter “2” if you want to remove both too short and too long strands.,2,,,,,,,,,,,,
+Number of cleanups,"Put ""2"" if you need the robot to re-purify freshly eluted DNA with the same parameters (helps increase purity). Otherwise put ""1"". Only 6 samples at a time for 1 cutoff, or 3 at a time for 2 cutoffs.",2,,,,,,,,,,,,
+Number of cutoffs,Enter “1” if you only need to remove short strands or small molecules; enter “2” if you want to remove both too short and too long strands.,1,,,,,,,,,,,,
 Tip box refilled,"If you placed a new tip box before the purification, select “1”. If partially used tip box remains from the previous purification, select “0”.",0,,,,,,,,,,,,
 Beads initial volume,uL. How much of the beads is present,3500,,,,,,,,,,,,
 Eluent volume,"uL. How much of the eluent is present. If value is < 0, the value from a previous experiment is used (careful, as liquid could evaporate)",25000,,,,,,,,,,,,
@@ -12,10 +12,7 @@ Elution volume,in uL,30,30,30,30,30,30,30,30,30,30,30,30,30
 ,,,,,,,,,,,,,,
 DNA size cutoff,Will retain all DNA shorter than this value. Used if “fraction” or “bead volume” is not provided,250,150,300,0,0,0,0,0,0,0,0,0,0
 Fraction,"How much volume of the beads suspension to add, relative to the sample volume. Example: sample volume = 30 uL, fraction = 0.5, then 15 uL of beads suspension will be added. Overrides “DNA size cutoff” value, but is ignored if “beads volume” is provided.",1.5,1,0.7,0,0,0,0,0,0,0,0,0,0
-Beads volume,"How much volume of the beads suspension to add. If provided, overrides DNA size cutoff and Fraction.",140,110,67,0,0,0,0,0,0,0,0,0,0
-DNA size upper cutoff,Will retain all DNA longer than this value. Used if “fraction” or “bead volume” is not provided,850,750,600,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
-Fraction upper cutoff,"How much volume of the beads suspension to add for the long DNA cutoff, relative to the sample volume. Example: sample volume = 30 uL, fraction = 0.5, then 15 uL of beads suspension will be added. Overrides “DNA size cutoff” value, but is ignored if “beads volume” is provided.",0.4,0.6,0.5,0,0,0,0,0,0,0,0,0,0
-Beads volume upper cutoff,"How much volume of the beads suspension to add for the long DNA cutoff. If provided, overrides DNA size cutoff and Fraction.",80,70,60,0,0,0,0,0,0,0,0,0,0
+Beads volume,"How much volume of the beads suspension to add. If provided, overrides DNA size cutoff and Fraction.",0,0,0,0,0,0,0,0,0,0,0,0,0
 ,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,
 Perform initial checkup,"1=yes, 0=no. If “1”, the robot will perform initial checkup before physically starting the protocol. You can review the checkup result and chose to proceed or abort. Select “0” if you are sure all parameters are correct",0,,,,,,,,,,,,
@@ -43,7 +40,6 @@ Second stage ethanol wash volume,in uL,200,200,200,200,200,200,200,200,200,200,2
 Second stage ethanol wash time,in minutes,0.5,,,,,,,,,,,,
 Remove extra liquid with a fresh tip,"1=yes, 0=no",1,,,,,,,,,,,,
 Time to dry after ethanol wash,minutes,4,,,,,,,,,,,,
-,,,,,,,,,,,,,,
 Elution time,minutes,5,,,,,,,,,,,,
 Elution times to mix,How many times to repeat a mixing cycle. Put more if you notice robot is not properly resuspending the beads during elution.,4,,,,,,,,,,,,
 Times to mix while eluting,"While waiting for elution, the robot will attempt to mix the samples this many times.",1,,,,,,,,,,,,
