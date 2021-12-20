@@ -165,6 +165,16 @@ class sample_type(data):
             print("Function getMixScript; sample type "+str(self.name)+":")
             print("Provided path "+str(filepath)+" does not exist.")
     
+    def setLowVolTipBottomGap(self, z):
+        """
+        In mm, sets the gap between the tip and the tube bottom when uptaking the low volume liquid.
+        """
+        self._setSetting('low_volume_tip_and_bottom_gap', z)
+        
+    def getLowVolTipBottomGap(self):
+        return self._getSetting('low_volume_tip_and_bottom_gap')
+    
+    
     
 class sample(data):
     """

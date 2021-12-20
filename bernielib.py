@@ -108,6 +108,8 @@ class robot(data):
         self.load_cells_zeroed_near_tips = False
         # Whether to calculate wall touch Z relative to the liquid level
         self.touch_above_liquid = False
+        # Low liquid volume offset - general robot setting (init is in the function already.
+        self.getLiquidUptakeLowVolBottomOffset()
         
     
     def close(self):
@@ -762,6 +764,7 @@ class robot(data):
         Usually in the range between 0.1 to 0.5 mm.
         """
         self._setSetting('liquid_uptake_low_volume_bottom_offset', offset)
+        self.liquid_uptake_low_volume_bottom_offset = offset
         
     def getLiquidUptakeLowVolBottomOffset(self):
         """
@@ -769,7 +772,9 @@ class robot(data):
         When uptaking, the tip will be away from the bottom of the tube on this value.
         Usually in the range between 0.1 to 0.5 mm.
         """
-        return self._getSetting('liquid_uptake_low_volume_bottom_offset')
+        self.liquid_uptake_low_volume_bottom_offset = self._getSetting(
+                                                        'liquid_uptake_low_volume_bottom_offset')
+        return self.liquid_uptake_low_volume_bottom_offset
 
     def _uptakeRemainingLiquidFromTheSide(self, axis, radius, delay, dZ, plunger_volume_position):
         """
@@ -801,20 +806,19 @@ class robot(data):
 
     
     def _uptakeLiquidFromLowVolumeTube(self, init_uptake_vol_position, R, T, init_delay=0.5):
-        liquid_uptake_low_volume_bottom_offset = self.getLiquidUptakeLowVolBottomOffset()
         self.movePipetteToVolume(init_uptake_vol_position)
         time.sleep(init_delay)
         # Moving slightly up
-        self.moveAxisDelta('Z', -liquid_uptake_low_volume_bottom_offset)
+        self.moveAxisDelta('Z', -self.liquid_uptake_low_volume_bottom_offset)
         time.sleep(init_delay)
         vol_per_step = init_uptake_vol_position/4.0
         self._uptakeRemainingLiquidFromTheSide('X', R, T, 
-                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-vol_per_step)
+                            self.liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-vol_per_step)
         self._uptakeRemainingLiquidFromTheSide('X', -R, T, 
-                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-2*vol_per_step)                    
+                            self.liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-2*vol_per_step)                    
         self._uptakeRemainingLiquidFromTheSide('Y', R, T, 
-                            liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-3*vol_per_step)
-        self._uptakeRemainingLiquidFromTheSide('Y', -R, T, liquid_uptake_low_volume_bottom_offset, 0)
+                            self.liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-3*vol_per_step)
+        self._uptakeRemainingLiquidFromTheSide('Y', -R, T, self.liquid_uptake_low_volume_bottom_offset, 0)
 
     
     def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, 
@@ -902,9 +906,10 @@ class robot(data):
         
         # Deciding whether to follow a low volume uptake or a normal uptake
         if sample_has_low_volume:
+            # Low volume offset specific to the sample type
+            self.liquid_uptake_low_volume_bottom_offset = sample.stype.getLowVolTipBottomGap()
             # Low volume uptake procedure
-            # Uptaking liquid
-            self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=volume*0.8, R=2, T=0.5, init_delay=0.5)
+            self._uptakeLiquidFromLowVolumeTube(init_uptake_vol_position=volume, R=2, T=0.5, init_delay=0.5)
             # Waiting after last step (maybe some liquid left)
             time.sleep(pipetting_delay)
             # Eliminating the lag
