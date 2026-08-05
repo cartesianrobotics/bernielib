@@ -2,7 +2,6 @@ import os
 import json
 
 import unittest
-from unittest import mock
 from unittest.mock import patch
 
 import bernielib as bl
@@ -11,7 +10,7 @@ import bernielib as bl
 def removeOldTestFile():
     try:
         os.remove('test_consumable.json')
-    except:
+    except FileNotFoundError:
         pass
         
 class bernielib_test_case(unittest.TestCase):
@@ -34,33 +33,15 @@ class bernielib_test_case(unittest.TestCase):
         c.save()
 
         # Control for the file to be created
-        try:
-            f = open('test_consumable.json', 'r')
-            successfully_opened = True
-            f.close()
-        except:
-            successfully_opened = False
-        self.assertEqual(successfully_opened, True)
-        
+        self.assertTrue(os.path.exists('test_consumable.json'))
+
         # Negative control for some random file not to be created
-        try:
-            f = open('negative_control_consumable.json', 'r')
-            successfully_opened = True
-            f.close()
-        except:
-            successfully_opened = False
-        self.assertEqual(successfully_opened, False)
-        
+        self.assertFalse(os.path.exists('negative_control_consumable.json'))
+
         removeOldTestFile()
-            
+
         # Control for test file to be successfully deleted
-        try:
-            f = open('test_consumable.json', 'r')
-            successfully_opened = True
-            f.close()
-        except:
-            successfully_opened = False
-        self.assertEqual(successfully_opened, False)
+        self.assertFalse(os.path.exists('test_consumable.json'))
 
 
 

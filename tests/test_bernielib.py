@@ -1,5 +1,4 @@
 import unittest
-from unittest import mock
 
 import time
 import logging
@@ -12,7 +11,6 @@ from unittest.mock import patch
 class bernielib_test_case(unittest.TestCase):
     
     def setUp(self):
-        self.tearDown()
         logging.disable(logging.CRITICAL)
         # NOTE: a @patch decorator on setUp is undone before the test body
         # starts, so the serial port used to be unmocked during the tests
@@ -28,15 +26,12 @@ class bernielib_test_case(unittest.TestCase):
             self.ber = bl.robot(cartesian_port_name='COM18', loadcell_port_name='COM7')
     
     def tearDown(self):
-        
-        try:
-            self.ber.close()
-        except:
-            pass
-        try:
-            del self.ber
-        except:
-            pass
+        # setUp used to call this method before it had built anything, which is
+        # why the two statements below were wrapped in bare try/except. unittest
+        # builds a fresh instance per test and only calls tearDown when setUp
+        # succeeded, so self.ber is always there.
+        self.ber.close()
+        del self.ber
         logging.disable(logging.NOTSET)
 
 

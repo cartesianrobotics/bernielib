@@ -4,7 +4,6 @@ from unittest import mock
 import logging
 import csv
 import time
-from datetime import timedelta
 from shutil import copyfile
 import bernielib
 
@@ -12,7 +11,6 @@ import purify as ponec
 import bernielib as bl
 
 from unittest.mock import patch
-from unittest.mock import ANY
 
 # Absolute path of the repository, so the fixtures below do not depend on the
 # directory the tests happen to be started from.
@@ -57,7 +55,7 @@ class purify_settings_test_case(unittest.TestCase):
     def delTempSettingsFile(self):
         try:
             os.remove(self.mock_csv_path)
-        except:
+        except FileNotFoundError:
             pass
     
     def test__test_creating_mockup_csv(self):
@@ -173,8 +171,13 @@ class purify_settings_test_case(unittest.TestCase):
         
     @patch('purify.settings.loadIndividualSettings')
     def test_getRackName(self, mock_loadIndividualSettings):
+        # This test drives _getRackName with a bad rack name on purpose, which
+        # logs an error. Silence it, but register the restore straight away:
+        # logging.disable is global, and this used to leak into every test that
+        # ran afterwards.
         logging.disable(logging.CRITICAL)
-    
+        self.addCleanup(logging.disable, logging.NOTSET)
+
         beads = 'Beads tube rack'
         waste = 'Waste tube rack'
         eluent = 'Eluent tube rack'
@@ -713,7 +716,7 @@ class purify_items_test_case(unittest.TestCase):
     def tearDown(self):
         try:
             del self.ber
-        except:
+        except AttributeError:
             pass
         logging.disable(logging.NOTSET)
 
@@ -795,11 +798,11 @@ class purify_protocol_test_case(unittest.TestCase):
         self.ber.setSpeedPipette(self.default_pipetting_speed)
         try:
             os.remove(self.test_samplesheet_path)
-        except:
+        except FileNotFoundError:
             pass
         try:
             os.remove(self.test_samplesheet_path_2)
-        except:
+        except FileNotFoundError:
             pass
         logging.disable(logging.NOTSET)
     
@@ -824,11 +827,8 @@ class purify_protocol_test_case(unittest.TestCase):
     @patch('purify.bl.robot.transferLiquid')
     @patch('purify.bl.robot.mixByScript')
     @patch('purify.bl.robot.pickUpNextTip')
-    @patch('purify.bl.robot._writeAndWait')
-    @patch('serial.Serial')
     @patch('time.sleep', return_value=None)
-    def test_purify__smoke_one_and_two_stage(self, mock_sleep, mock_serial,
-            mock_writeAndWait, mock_pickUpNextTip,
+    def test_purify__smoke_one_and_two_stage(self, mock_sleep, mock_pickUpNextTip,
             mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid,
             mock_moveAxisDelta):
         # Broad smoke test: run the whole protocol end to end for both the one
@@ -947,43 +947,39 @@ class purify_protocol_test_case(unittest.TestCase):
     @patch('purify.bl.robot.transferLiquid')
     @patch('purify.bl.robot.mixByScript')
     @patch('purify.bl.robot.pickUpNextTip')
-    @patch('purify.bl.robot._writeAndWait')
-    @patch('serial.Serial')
     @patch('time.sleep', return_value=None)
     @patch('purify.bl.robot.setSpeedPipette')
-    def test_purify__one_stage__pipette_speed(self, 
-            mock_setSpeedPipette, mock_sleep, mock_serial,
-            mock_writeAndWait, mock_pickUpNextTip,
-            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid, 
+    def test_purify__one_stage__pipette_speed(self,
+            mock_setSpeedPipette, mock_sleep, mock_pickUpNextTip,
+            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid,
             mock_moveAxisDelta):
         
         p = ponec.protocol(self.ber, self.settings)
         p.purify()
         
-        # Adding beads
-        self.assertEqual(mock_setSpeedPipette.mock_calls[0], mock.call(1500.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[1], mock.call(2500.0))
-        # Removing sup
-        self.assertEqual(mock_setSpeedPipette.mock_calls[2], mock.call(1500.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[3], mock.call(2500.0))
-        # Adding ethanol 1st stage
-        self.assertEqual(mock_setSpeedPipette.mock_calls[4], mock.call(2000.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[5], mock.call(2500.0))
-        # Removing ethanol 1st stage
-        self.assertEqual(mock_setSpeedPipette.mock_calls[6], mock.call(2000.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[7], mock.call(2500.0))
-        # Adding ethanol 2nd stage
-        self.assertEqual(mock_setSpeedPipette.mock_calls[8], mock.call(2000.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[9], mock.call(2500.0))
-        # Removing ethanol 2nd stage
-        self.assertEqual(mock_setSpeedPipette.mock_calls[10], mock.call(2000.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[11], mock.call(2500.0))
-        # Adding eluent
-        self.assertEqual(mock_setSpeedPipette.mock_calls[12], mock.call(1800.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[13], mock.call(2500.0))
-        # Transferring eluate to the results tubes
-        self.assertEqual(mock_setSpeedPipette.mock_calls[14], mock.call(1800.0))
-        self.assertEqual(mock_setSpeedPipette.mock_calls[15], mock.call(2500.0))
+        # Every speed change the protocol is expected to make, in order. Each
+        # step sets its own speed and then restores the default. Listing them
+        # instead of indexing mock_calls by hand means that inserting a step
+        # gives one clear failure rather than a dozen shifted ones.
+        default = 2500.0
+        expected_steps = [
+            ('adding beads', 1500.0),
+            ('removing supernatant', 1500.0),
+            ('adding ethanol, 1st wash', 2000.0),
+            ('removing ethanol, 1st wash', 2000.0),
+            ('adding ethanol, 2nd wash', 2000.0),
+            ('removing ethanol, 2nd wash', 2000.0),
+            ('adding eluent', 1800.0),
+            ('transferring eluate to the results tubes', 1800.0),
+        ]
+
+        self.assertEqual(len(mock_setSpeedPipette.mock_calls), 2 * len(expected_steps))
+        for i, (label, speed) in enumerate(expected_steps):
+            with self.subTest(step=label):
+                self.assertEqual(mock_setSpeedPipette.mock_calls[2 * i],
+                        mock.call(speed))
+                self.assertEqual(mock_setSpeedPipette.mock_calls[2 * i + 1],
+                        mock.call(default))
 
 
     @patch('purify.bl.robot.moveAxisDelta')
@@ -992,12 +988,10 @@ class purify_protocol_test_case(unittest.TestCase):
     @patch('purify.bl.robot.transferLiquid')
     @patch('purify.bl.robot.mixByScript')
     @patch('purify.bl.robot.pickUpNextTip')
-    @patch('purify.bl.robot._writeAndWait')
-    @patch('serial.Serial')
     @patch('time.sleep', return_value=None)
-    def test_purify__one_stage__pipette_delay(self, 
-            mock_sleep, mock_serial, mock_writeAndWait, mock_pickUpNextTip,
-            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid, 
+    def test_purify__one_stage__pipette_delay(self,
+            mock_sleep, mock_pickUpNextTip,
+            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid,
             mock_moveAxisDelta):
         
         p = ponec.protocol(self.ber, self.settings)
@@ -1026,12 +1020,14 @@ class purify_protocol_test_case(unittest.TestCase):
             self.assertEqual(call[1][0], expected_sample)
         
     def test_getAlreadyWaitedTime(self):
+        # Drive the clock directly rather than sleeping. The old version slept
+        # for 0.05 s and then required the result to be under 0.07 s, a 20 ms
+        # budget that a loaded machine can miss for no good reason.
         p = ponec.protocol(self.ber, self.settings)
-        p.timestamp = time.time()
-        time.sleep(0.05)
-        result = p.getAlreadyWaitedTime()
-        self.assertTrue(result > 0.05)
-        self.assertTrue(result < 0.07)
+        p.timestamp = 1000.0
+        with patch('purify.time.time', return_value=1000.25):
+            result = p.getAlreadyWaitedTime()
+        self.assertEqual(result, 0.25)
         
     def test_getDelayBetweenActions(self):
         p = ponec.protocol(self.ber, self.settings)
@@ -1042,6 +1038,12 @@ class purify_protocol_test_case(unittest.TestCase):
         r = p.getDelayBetweenActions(100, -1)
         self.assertEqual(r, 100)
 
+    # TODO: this test and the two incubation tests below measure real elapsed
+    # wall clock time, so they are only as reliable as the machine is idle.
+    # They currently allow a generous 200 ms over a 50 ms wait, which passes
+    # consistently here, but the robust form is to patch time.sleep and assert
+    # the duration that was requested rather than the duration that happened.
+    # See test_getAlreadyWaitedTime above for that pattern.
     @patch('purify.protocol.mixManySamples')
     def test_incubate(self, mock_mixManySamples):
         p = ponec.protocol(self.ber, self.settings)

@@ -1,8 +1,6 @@
 import unittest
 import os
-from unittest import mock
 import json
-import shutil
 import logging
 
 import general
@@ -37,7 +35,7 @@ class settings_test_case(unittest.TestCase):
         
         try:
             os.mkdir(self.factory_default_test_dir)
-        except:
+        except FileExistsError:
             pass
             
         self.setting_path = self.factory_default_test_dir + self.name + '.json'
@@ -103,20 +101,22 @@ class settings_test_case(unittest.TestCase):
 
     
     def tearDown(self):
+        # setUp calls tearDown before it sets anything up, so on the first pass
+        # self.setting_path and self.factory_default_test_dir do not exist yet.
         try:
             os.remove('dummy_setting_name.json')
-        except:
+        except FileNotFoundError:
             pass
         try:
             os.remove('setting_file_creation_test.json')
-        except:
+        except FileNotFoundError:
             pass
         try:
             os.remove(self.setting_path)
-        except:
+        except (AttributeError, FileNotFoundError):
             pass
         try:
             os.rmdir(self.factory_default_test_dir)
-        except:
+        except (AttributeError, OSError):
             pass
         logging.disable(logging.NOTSET)

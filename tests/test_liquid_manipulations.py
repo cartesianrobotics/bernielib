@@ -1,8 +1,8 @@
 import unittest
 from unittest import mock
 import logging
+import os
 import time
-import bernielib
 
 import bernielib as bl
 
@@ -28,11 +28,16 @@ class bernielib_test_case(unittest.TestCase):
     def tearDown(self):
         logging.disable(logging.NOTSET)
         del self.ber
+        # The samples created by these tests are named 's1', so bernielib
+        # writes s1.json next to them. This used to read os.remove(s1.json),
+        # which raised NameError on every run because os was never imported
+        # and s1 is not in scope here; the bare except hid it, so the file was
+        # never actually cleaned up.
         try:
-            os.remove(s1.json)
-        except:
+            os.remove('s1.json')
+        except FileNotFoundError:
             pass
-    
+
         
     @patch('purify.bl.robot.tareAll')
     @patch('purify.bl.robot.moveAxis')

@@ -1,5 +1,4 @@
 import unittest
-from unittest import mock
 import os
 import pandas as pd
 import logging
@@ -68,7 +67,9 @@ class bernielib_test_case(unittest.TestCase):
         line2 = "0,top,down,0,0,0,1700,0.5,Initially lowering the plunger\n"
         line3 = "1,bottom,up,0,0,0,250,0.5,mixing in place\n"
         
-        with open(self.mix_script_filename, mode='a') as csv_file:
+        # 'w', not 'a': appending meant that a leftover file from an
+        # interrupted run would be silently added to instead of replaced.
+        with open(self.mix_script_filename, mode='w') as csv_file:
             csv_file.write(line1)
             csv_file.write(line2)
             csv_file.write(line3)
@@ -146,27 +147,28 @@ class bernielib_test_case(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove(self.sample_type+'.json')
-        except:
+        except FileNotFoundError:
             pass
-            
+
         try:
             os.remove(self.sample_name+'.json')
-        except:
+        except FileNotFoundError:
             pass
 
         try:
             os.remove(self.mix_script_filename)
-        except:
+        except FileNotFoundError:
             pass
-            
+
+        # self.ber is missing if setUp failed before it got that far.
         try:
             self.ber.close()
-        except:
+        except AttributeError:
             pass
 
         try:
             del self.ber
-        except:
+        except AttributeError:
             pass
         logging.disable(logging.NOTSET)
         
