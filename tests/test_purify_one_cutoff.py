@@ -14,6 +14,10 @@ import bernielib as bl
 from unittest.mock import patch
 from unittest.mock import ANY
 
+# Absolute path of the repository, so the fixtures below do not depend on the
+# directory the tests happen to be started from.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 #TODO: Beads volume for the first stage must be less than for the second stage.
 
 
@@ -22,7 +26,8 @@ class purify_settings_test_case(unittest.TestCase):
     def setUp(self):
         # Creating generic csv file data
         # mock .csv data path (in tests folder).
-        self.mock_csv_path = '.\\tests\\mock_sample_sheet_generic.csv'
+        self.mock_csv_path = os.path.join(
+                _REPO_ROOT, 'tests', 'mock_sample_sheet_generic.csv')
         self.row_dict = {
             'Parameters': ['Parameters', 
                            'Comment', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
@@ -679,15 +684,19 @@ class purify_items_test_case(unittest.TestCase):
     Handles tests for samples, reagents and other items,
     usually a tube.
     """
-    @patch('purify.bl.robot._writeAndWait')
-    @patch('time.sleep', return_value=None)
-    @patch('bernielib.time')
-    @patch('purify.time.sleep')
-    @patch('serial.Serial')
-    def setUp(self, mock_serial, mock_sleep, mock_sleep2, mock_sleep3, mock_writeAndWait):
+    def setUp(self):
         logging.disable(logging.CRITICAL)
-        self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
-        csv_path = r'.\factory_default\samplesheet.csv'
+        # A @patch decorator on setUp is undone before the test body starts, so
+        # the hardware has to be patched here and stopped through addCleanup
+        # instead. That way it stays mocked for the whole test.
+        for target in ('serial.Serial', 'bernielib.robot._writeAndWait'):
+            patcher = patch(target)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        # Connecting to the controllers sleeps while they boot up.
+        with patch('time.sleep'):
+            self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        csv_path = os.path.join(_REPO_ROOT, 'factory_default', 'samplesheet.csv')
         self.settings = ponec.settings(csv_path)
         
         
@@ -734,18 +743,28 @@ class purify_protocol_test_case(unittest.TestCase):
     Protocol class handles all the protocol-related operations and data.
     """
     
-    @patch('purify.bl.robot._writeAndWait')
-    @patch('time.sleep', return_value=None)
-    @patch('bernielib.time')
-    @patch('purify.time.sleep')
-    @patch('serial.Serial')
-    def setUp(self, mock_serial, mock_sleep, mock_sleep2, mock_sleep3, mock_writeAndWait):
+    def setUp(self):
         logging.disable(logging.CRITICAL)
-        self.test_samplesheet_path = r'.\tests\samplesheet_protocol_test.csv'
-        self.test_samplesheet_path_2 = r'.\tests\samplesheet_2stages_protocol_test.csv'
-        copyfile(r'.\factory_default\samplesheet.csv', self.test_samplesheet_path)
-        copyfile(r'.\factory_default\samplesheet_2stages.csv', self.test_samplesheet_path_2)
-        self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        # A @patch decorator on setUp is undone before the test body starts, so
+        # the hardware has to be patched here and stopped through addCleanup
+        # instead. That way it stays mocked for the whole test.
+        # time.sleep is deliberately left alone: several tests in this class
+        # measure how long an incubation actually waited.
+        for target in ('serial.Serial', 'bernielib.robot._writeAndWait'):
+            patcher = patch(target)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.test_samplesheet_path = os.path.join(
+                _REPO_ROOT, 'tests', 'samplesheet_protocol_test.csv')
+        self.test_samplesheet_path_2 = os.path.join(
+                _REPO_ROOT, 'tests', 'samplesheet_2stages_protocol_test.csv')
+        copyfile(os.path.join(_REPO_ROOT, 'factory_default', 'samplesheet.csv'),
+                self.test_samplesheet_path)
+        copyfile(os.path.join(_REPO_ROOT, 'factory_default', 'samplesheet_2stages.csv'),
+                self.test_samplesheet_path_2)
+        # Connecting to the controllers sleeps while they boot up.
+        with patch('time.sleep'):
+            self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         self.settings = ponec.settings(self.test_samplesheet_path)
         self.settings2 = ponec.settings(self.test_samplesheet_path_2)
         
@@ -790,14 +809,26 @@ class purify_protocol_test_case(unittest.TestCase):
     @patch('purify.bl.robot._writeAndWait')
     @patch('serial.Serial')
     @patch('time.sleep', return_value=None)
-    def test_purify(self, mock_sleep, mock_serial,
+    def test_purify__smoke_one_and_two_stage(self, mock_sleep, mock_serial,
             mock_writeAndWait, mock_pickUpNextTip,
-            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid, 
+            mock_mixByScript, mock_transferLiquid, mock_dumpTipToWaste, mock_uptakeLiquid,
             mock_moveAxisDelta):
+        # Broad smoke test: run the whole protocol end to end for both the one
+        # and the two stage settings. It mainly guards against the protocol
+        # raising, but check that it actually moved liquid rather than
+        # silently doing nothing at all.
         p = ponec.protocol(self.ber, self.settings)
         p.purify()
+        one_stage_transfers = mock_transferLiquid.call_count
+        self.assertGreater(one_stage_transfers, 0)
+
+        mock_transferLiquid.reset_mock()
         p2 = ponec.protocol(self.ber, self.settings2)
         p2.purify()
+        two_stage_transfers = mock_transferLiquid.call_count
+
+        # A two stage cleanup moves liquid more times than a single stage one.
+        self.assertGreater(two_stage_transfers, one_stage_transfers)
 
     @patch('purify.protocol.elution')
     @patch('purify.protocol.ethanolWash')
@@ -824,6 +855,14 @@ class purify_protocol_test_case(unittest.TestCase):
         p = ponec.protocol(self.ber, self.settings)
         p.removeSupernatant()
 
+        # Exactly one transfer per sample tube, every one of them into the waste.
+        self.assertEqual(mock_transferLiquid.call_count, len(p.tubes.samples_list))
+        for call, expected_source in zip(mock_transferLiquid.call_args_list,
+                p.tubes.samples_list):
+            source, destination = call[0][0], call[0][1]
+            self.assertEqual(source, expected_source)
+            self.assertEqual(destination, p.tubes.waste)
+
     @patch('purify.bl.robot.pickUpNextTip')
     @patch('purify.bl.robot.dumpTipToWaste')
     @patch('purify.bl.robot.move')
@@ -831,11 +870,28 @@ class purify_protocol_test_case(unittest.TestCase):
     def test_transferLiquidManyTubes(self, mock_transferLiquid, mock_move,
             mock_dumpTipToWaste, mock_pickUpNextTip):
         p = ponec.protocol(self.ber, self.settings)
-        p.transferLiquidManyTubes(sources=p.tubes.samples_list, 
-                destinations=p.tubes.result_list, 
+        expected_transfers = len(p.tubes.samples_list)
+
+        p.transferLiquidManyTubes(sources=p.tubes.samples_list,
+                destinations=p.tubes.result_list,
                 v_list=self.settings.beads_vol_1st_stage_list)
-        p.transferLiquidManyTubes(sources=p.tubes.samples_list, 
+
+        # An explicit volume list is passed through tube by tube, and because a
+        # volume is known the source tube is not emptied.
+        self.assertEqual(mock_transferLiquid.call_count, expected_transfers)
+        for call, expected_v in zip(mock_transferLiquid.call_args_list,
+                self.settings.beads_vol_1st_stage_list):
+            self.assertEqual(call[0][2], expected_v)
+            self.assertFalse(call[1]['dry_tube'])
+
+        mock_transferLiquid.reset_mock()
+        p.transferLiquidManyTubes(sources=p.tubes.samples_list,
                 destinations=p.tubes.result_list)
+
+        # With no volume list, every source tube is emptied instead.
+        self.assertEqual(mock_transferLiquid.call_count, expected_transfers)
+        for call in mock_transferLiquid.call_args_list:
+            self.assertTrue(call[1]['dry_tube'])
     
     
     @patch('purify.bl.robot.transferLiquid')
@@ -987,9 +1043,9 @@ class purify_protocol_test_case(unittest.TestCase):
         
         self.assertTrue(time_waited > time_to_wait)
         self.assertTrue(time_waited < time_to_wait+0.2)
-        mock_mixManySamples.is_called()
+        mock_mixManySamples.assert_called()
 
-    
+
     # TODO: Make a general function for testing the time waited.
     @patch('purify.protocol.transferLiquidManyTubes')
     @patch('purify.protocol.pullBeads')
@@ -1010,7 +1066,7 @@ class purify_protocol_test_case(unittest.TestCase):
         time_waited = time.time() - local_timestamp
         self.assertTrue(time_waited > time_to_wait)
         self.assertTrue(time_waited < time_to_wait+0.2)
-        mock_mixManySamples.is_called()
+        mock_mixManySamples.assert_called()
 
     def test__reinitializeTubesForSecondCleanup(self):
         p = ponec.protocol(self.ber, self.settings2)

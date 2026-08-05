@@ -9,11 +9,17 @@ from unittest.mock import patch
 
 class bernielib_test_case(unittest.TestCase):
     
-    @patch('time.sleep')
-    @patch('serial.Serial')
-    def setUp(self, mock_serial, mock_sleep):
+    def setUp(self):
         logging.disable(logging.CRITICAL)
-        self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        # A @patch decorator on setUp is undone before the test body starts, so
+        # the serial port has to be patched here and stopped through addCleanup
+        # instead. That way it stays mocked for the whole test.
+        serial_patcher = patch('serial.Serial')
+        serial_patcher.start()
+        self.addCleanup(serial_patcher.stop)
+        # Connecting to the controllers sleeps while they boot up.
+        with patch('time.sleep'):
+            self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         self.s1 = bl.createSample('eppendorf', 's1', self.ber.samples_rack, 1, 0, 0)
         self.beads_5ml = bl.createSample('5mL', 'beads_5ml', self.ber.samples_rack, 1, 0, 0)
         

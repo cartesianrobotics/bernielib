@@ -10,12 +10,17 @@ from unittest.mock import patch
 
 class bernielib_test_case(unittest.TestCase):
     
-    @patch('bernielib.time.sleep')
-    @patch('time.sleep')
-    @patch('purify.bl.serial.Serial')
-    def setUp(self, mock_serial, mock_sleep, mock_sleep2):
+    def setUp(self):
         logging.disable(logging.CRITICAL)
-        self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
+        # A @patch decorator on setUp is undone before the test body starts, so
+        # the serial port has to be patched here and stopped through addCleanup
+        # instead. That way it stays mocked for the whole test.
+        serial_patcher = patch('serial.Serial')
+        serial_patcher.start()
+        self.addCleanup(serial_patcher.stop)
+        # Connecting to the controllers sleeps while they boot up.
+        with patch('time.sleep'):
+            self.ber = bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
         
         
     def tearDown(self):
@@ -188,9 +193,12 @@ class bernielib_test_case(unittest.TestCase):
         self.assertFalse(self.ber.moveDownUntilPress.called)
         
         
+    @unittest.skip("Known failure, never investigated. The body below was commented "
+                   "out rather than fixed, so the test used to pass silently while "
+                   "asserting nothing. Skipping keeps that visible.")
     @patch('purify.bl.robot.moveDownUntilPress')
     def test_uptakeLiquid__touch_bottom_decision_2(self, mock_moveDownUntilPress):
-        
+
         """
         TODO: This one fails. investigate.
         z_bottom = 120    # Mocked Z coordinate of the bottom of the tube
