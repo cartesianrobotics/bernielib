@@ -1,11 +1,11 @@
 import unittest
-import mock
+from unittest import mock
 import os
 import logging
 
 import bernielib as bl
 
-from mock import patch
+from unittest.mock import patch
 
 class bernielib_test_case(unittest.TestCase):
     

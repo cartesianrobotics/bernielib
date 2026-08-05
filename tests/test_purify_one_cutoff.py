@@ -1,6 +1,6 @@
 import unittest
 import os
-import mock
+from unittest import mock
 import logging
 import csv
 import time
@@ -11,7 +11,7 @@ import bernielib
 import purify as ponec
 import bernielib as bl
 
-from mock import patch
+from unittest.mock import patch
 from unittest.mock import ANY
 
 #TODO: Beads volume for the first stage must be less than for the second stage.
@@ -122,6 +122,8 @@ class purify_settings_test_case(unittest.TestCase):
         self.prep_settingsFile('Initial sample volume', 
             [100, 29, 50, 0, 0, -1, -1, -1, -1, -1, -1, -1])
         s = ponec.settings(self.mock_csv_path)
+        # loadIndividualSettings is mocked out, so 'cleanups' has to be set by hand.
+        s.cleanups = 1
         positions = s.positionsToPurify2ndStage()
         self.assertEqual(positions, [6, 7, 8])
         s.cleanups = 2
@@ -130,7 +132,7 @@ class purify_settings_test_case(unittest.TestCase):
         self.delTempSettingsFile()
 
     @patch('purify.settings.loadIndividualSettings')
-    def test_positionsToPurify2ndStage(self, mock_loadIndividualSettings):
+    def test_returnSampleParameterList(self, mock_loadIndividualSettings):
         param = 'Initial sample volume'
         self.prep_settingsFile(param, [100, 29, 50, 0, 0, -1, -1, -1, -1, -1, -1, -1])
         s = ponec.settings(self.mock_csv_path)

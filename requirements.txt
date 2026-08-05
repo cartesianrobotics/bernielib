@@ -1,0 +1,13 @@
+# Bernie / bernielib runtime + test dependencies.
+# Verified against Python 3.13.
+#
+#   python -m venv .venv
+#   .venv/Scripts/pip install -r requirements.txt
+#   python -m unittest discover tests
+#
+# Note: `mock` is no longer required; the tests use the stdlib `unittest.mock`.
+
+pandas>=2.2
+scipy>=1.11
+Pillow>=10.0
+pyserial>=3.5

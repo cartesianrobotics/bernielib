@@ -1,6 +1,6 @@
 import unittest
 import os
-import mock
+from unittest import mock
 import json
 import shutil
 import logging

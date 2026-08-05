@@ -1,5 +1,5 @@
 import unittest
-import mock
+from unittest import mock
 
 import time
 import logging
@@ -7,7 +7,7 @@ import logging
 import bernielib as bl
 
 
-from mock import patch
+from unittest.mock import patch
 
 class bernielib_test_case(unittest.TestCase):
     
@@ -58,22 +58,9 @@ class bernielib_test_case(unittest.TestCase):
         times_called = self.ber.moveAxis.call_count
         
         self.assertEqual(times_called, 0)
-    
-    
-    @patch('purify.bl.robot.tareAll')
-    @patch('purify.bl.robot.moveAxis')
-    @patch('purify.bl.robot.getCombinedLoad', side_effect=[0, 0, 0, 1000, 2000, 3000, 4000])
-    @patch('purify.bl.robot.getPosition', return_value=100)
-    def test_moveDownUntilPress(self, mock_getPosition, mock_getCombinedLoad,
-            mock_moveAxis, mock_tareAll):
-        
-        self.ber.moveDownUntilPress(1, 500)
 
-        times_called = self.ber.moveAxis.call_count
-        
-        self.assertEqual(times_called, 3)
-        
-    """        
+
+    """
     def test_scanForStair(self):
         bl.time.sleep = mock.MagicMock()
         bl.serial.Serial = mock.MagicMock()

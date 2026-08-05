@@ -1664,9 +1664,9 @@ class robot(data):
         # msg will be in the form of:
         # 'ok\n<Idle|MPos:0.0000,0.0000,1.0000,3.0000|WPos:0.0000,0.0000,1.0000|F:3000.0,100.0>\n'
         # Now breaking on "|". Interested to get MPos:0.0000,0.0000,1.0000,3.0000
-        msg = re.split(pattern='\|', string=msg)[1]
+        msg = re.split(pattern=r'\|', string=msg)[1]
         # Now removing "MPos:". msg is 0.0000,0.0000,1.0000,3.0000
-        msg = re.split(pattern='\:', string=msg)[-1]
+        msg = re.split(pattern=r'\:', string=msg)[-1]
         # Now splitting the remaining string into the single float values:
         x = float(re.split(pattern=',', string=msg)[0])
         y = float(re.split(pattern=',', string=msg)[1])
