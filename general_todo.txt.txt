@@ -1,1 +1,33 @@
 General TODO.
+
+- Logging in the test notebooks looks wrong, and runs may not be recorded.
+  Affected: 21121701_Bernie_Test.ipynb, jupyter_notebooks/21111801_Bernie_Test.ipynb,
+  jupyter_notebooks/21112901_Bernie_Test.ipynb, jupyter_notebooks/21121701_Bernie_Test.ipynb
+  and the matching .ipynb_checkpoints copies.
+
+  Each of them starts with:
+
+      import purify
+      ...
+      logging.basicConfig(filename=(str(time.time())+'purify.log'), level=logging.INFO, ...)
+      logging.disable(logging.CRITICAL)
+
+  Two separate problems:
+
+  1. The basicConfig call in the notebook does nothing. Importing purify has
+     already configured the root logger, and basicConfig is a no-op once the
+     root logger has handlers. So the level and the file name the notebook asks
+     for are ignored, and purify's own settings apply instead (DEBUG, plus the
+     console handler purify installs).
+
+  2. logging.disable(logging.CRITICAL) then switches off every log record at
+     CRITICAL and below, which is all of them. So a purification driven from
+     these notebooks writes an essentially empty log file, even though a log
+     file is created and looks like a record of the run.
+
+  Worth deciding what the intended behaviour is: if the notebooks are meant to
+  keep a record of a run, the disable call should go, and the log setup should
+  live in one place rather than being attempted in both purify.py and the
+  notebook. Note that purify.py configures logging at import time, which is why
+  the notebook cannot override it; see tests/__init__.py for why that import
+  time call was left alone rather than moved behind a __main__ guard.
