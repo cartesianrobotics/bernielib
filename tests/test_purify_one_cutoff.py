@@ -26,6 +26,10 @@ class purify_settings_test_case(unittest.TestCase):
     def setUp(self):
         # Creating generic csv file data
         # mock .csv data path (in tests folder).
+        # TODO: this fixture is written into the tests directory of the
+        # repository itself. It should go into a tempfile.mkdtemp() that is
+        # removed by addCleanup, so that an interrupted run leaves nothing
+        # behind and two test processes cannot overwrite each other.
         self.mock_csv_path = os.path.join(
                 _REPO_ROOT, 'tests', 'mock_sample_sheet_generic.csv')
         self.row_dict = {
@@ -686,18 +690,24 @@ class purify_items_test_case(unittest.TestCase):
     """
     def setUp(self):
         logging.disable(logging.CRITICAL)
-        # A @patch decorator on setUp is undone before the test body starts, so
-        # the hardware has to be patched here and stopped through addCleanup
-        # instead. That way it stays mocked for the whole test.
+        # NOTE: a @patch decorator on setUp is undone before the test body
+        # starts, so the hardware used to be unmocked during the tests
+        # themselves. These patchers are started here and stopped through
+        # addCleanup, which keeps them in place for the test and for tearDown.
+        # Some tests below patch the same targets again with a decorator; that
+        # is redundant but harmless, and is left for a later cleanup.
         for target in ('serial.Serial', 'bernielib.robot._writeAndWait'):
             patcher = patch(target)
             patcher.start()
             self.addCleanup(patcher.stop)
-        # Connecting to the controllers sleeps while they boot up.
-        with patch('time.sleep'):
+        # time is mocked only while the fixture is built, which is exactly the
+        # scope the original decorators had. It is deliberately not extended
+        # over the test body, because tests in this file measure how long an
+        # incubation really waited.
+        with patch('bernielib.time'), patch('time.sleep'):
             self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
-        csv_path = os.path.join(_REPO_ROOT, 'factory_default', 'samplesheet.csv')
-        self.settings = ponec.settings(csv_path)
+            csv_path = os.path.join(_REPO_ROOT, 'factory_default', 'samplesheet.csv')
+            self.settings = ponec.settings(csv_path)
         
         
     def tearDown(self):
@@ -745,15 +755,20 @@ class purify_protocol_test_case(unittest.TestCase):
     
     def setUp(self):
         logging.disable(logging.CRITICAL)
-        # A @patch decorator on setUp is undone before the test body starts, so
-        # the hardware has to be patched here and stopped through addCleanup
-        # instead. That way it stays mocked for the whole test.
-        # time.sleep is deliberately left alone: several tests in this class
-        # measure how long an incubation actually waited.
+        # NOTE: a @patch decorator on setUp is undone before the test body
+        # starts, so the hardware used to be unmocked during the tests
+        # themselves. These patchers are started here and stopped through
+        # addCleanup, which keeps them in place for the test and for tearDown.
+        # Some tests below patch the same targets again with a decorator; that
+        # is redundant but harmless, and is left for a later cleanup.
         for target in ('serial.Serial', 'bernielib.robot._writeAndWait'):
             patcher = patch(target)
             patcher.start()
             self.addCleanup(patcher.stop)
+        # TODO: these fixtures are written into the tests directory of the
+        # repository itself. They should go into a tempfile.mkdtemp() that is
+        # removed by addCleanup, so that an interrupted run leaves nothing
+        # behind and two test processes cannot overwrite each other.
         self.test_samplesheet_path = os.path.join(
                 _REPO_ROOT, 'tests', 'samplesheet_protocol_test.csv')
         self.test_samplesheet_path_2 = os.path.join(
@@ -762,14 +777,17 @@ class purify_protocol_test_case(unittest.TestCase):
                 self.test_samplesheet_path)
         copyfile(os.path.join(_REPO_ROOT, 'factory_default', 'samplesheet_2stages.csv'),
                 self.test_samplesheet_path_2)
-        # Connecting to the controllers sleeps while they boot up.
-        with patch('time.sleep'):
+        # time is mocked only while the fixture is built, which is exactly the
+        # scope the original decorators had. It is deliberately not extended
+        # over the test body, because tests in this class measure how long an
+        # incubation really waited.
+        with patch('bernielib.time'), patch('time.sleep'):
             self.ber = ponec.bl.robot(cartesian_port_name='COM1', loadcell_port_name='COM2')
-        self.settings = ponec.settings(self.test_samplesheet_path)
-        self.settings2 = ponec.settings(self.test_samplesheet_path_2)
-        
-        # 11/12/2021 - default pipetting speed is 2500.0
-        self.default_pipetting_speed = self.ber.getSpeedPipette()
+            self.settings = ponec.settings(self.test_samplesheet_path)
+            self.settings2 = ponec.settings(self.test_samplesheet_path_2)
+
+            # 11/12/2021 - default pipetting speed is 2500.0
+            self.default_pipetting_speed = self.ber.getSpeedPipette()
         
     def tearDown(self):
         # Preserving the pipette speed settings, that might have been changed 
@@ -817,6 +835,19 @@ class purify_protocol_test_case(unittest.TestCase):
         # and the two stage settings. It mainly guards against the protocol
         # raising, but check that it actually moved liquid rather than
         # silently doing nothing at all.
+        #
+        # TODO: this needs to be expanded into a real test of purify().
+        # The two assertions below only prove that something happened and that
+        # two stages do more work than one. They say nothing about whether the
+        # right thing happened. Worth adding:
+        #   - the order of the stages, ie beads, incubation, supernatant
+        #     removal, ethanol washes, elution, in that sequence;
+        #   - the volumes handed to each transfer, against the samplesheet;
+        #   - that the second stage operates on the intermediate tubes rather
+        #     than on the original sample tubes;
+        #   - the number of ethanol washes actually performed.
+        # Splitting this into one test per protocol phase would be clearer than
+        # growing this single test further.
         p = ponec.protocol(self.ber, self.settings)
         p.purify()
         one_stage_transfers = mock_transferLiquid.call_count
@@ -1044,7 +1075,6 @@ class purify_protocol_test_case(unittest.TestCase):
         self.assertTrue(time_waited > time_to_wait)
         self.assertTrue(time_waited < time_to_wait+0.2)
         mock_mixManySamples.assert_called()
-
 
     # TODO: Make a general function for testing the time waited.
     @patch('purify.protocol.transferLiquidManyTubes')

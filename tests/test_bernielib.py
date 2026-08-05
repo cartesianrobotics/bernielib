@@ -12,16 +12,18 @@ from unittest.mock import patch
 class bernielib_test_case(unittest.TestCase):
     
     def setUp(self):
-
         self.tearDown()
         logging.disable(logging.CRITICAL)
-        # A @patch decorator on setUp is undone before the test body starts, so
-        # the serial port has to be patched here and stopped through addCleanup
-        # instead. That way it stays mocked for the whole test.
+        # NOTE: a @patch decorator on setUp is undone before the test body
+        # starts, so the serial port used to be unmocked during the tests
+        # themselves. The patcher is started here and stopped through
+        # addCleanup, which keeps it in place for the test and for tearDown.
         serial_patcher = patch('serial.Serial')
         serial_patcher.start()
         self.addCleanup(serial_patcher.stop)
-        # Connecting to the controllers sleeps while they boot up.
+        # time is mocked only while the fixture is built, which is exactly the
+        # scope the original decorator had. Extending it over the test body
+        # would break the tests here that measure a real timeout.
         with patch('time.sleep'):
             self.ber = bl.robot(cartesian_port_name='COM18', loadcell_port_name='COM7')
     
