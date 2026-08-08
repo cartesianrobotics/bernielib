@@ -1,0 +1,80 @@
+{
+  "title": "tube_racks",
+  "timestamp": "20260808_000528",
+  "racks": [
+    "samples",
+    "reagents",
+    "tips"
+  ],
+  "results_kept": true,
+  "aborted": null,
+  "before": {
+    "samples": {
+      "center_x": 88.0,
+      "center_y": 102.1,
+      "detected_z": 152.4
+    },
+    "reagents": {
+      "center_x": 88.0,
+      "center_y": 102.1,
+      "detected_z": 152.4
+    },
+    "tips": {
+      "center_x": 70.12,
+      "center_y": 75.1,
+      "detected_z": 147.2
+    }
+  },
+  "after": {
+    "samples": {
+      "center_x": 86.89999999999999,
+      "center_y": 102.1,
+      "detected_z": 152.1
+    },
+    "reagents": {
+      "center_x": 86.89999999999999,
+      "center_y": 102.1,
+      "detected_z": 152.1
+    },
+    "tips": {
+      "center_x": 69.02,
+      "center_y": 75.1,
+      "detected_z": 147.2
+    }
+  },
+  "found": {
+    "samples": {
+      "center_x": 86.89999999999999,
+      "center_y": 102.1,
+      "detected_z": 152.1,
+      "edges": [
+        [
+          "X",
+          -1,
+          5.2
+        ],
+        [
+          "X",
+          1,
+          168.6
+        ],
+        [
+          "Y",
+          -1,
+          9.5
+        ],
+        [
+          "Y",
+          1,
+          194.7
+        ]
+      ],
+      "scan_retries": 0
+    }
+  },
+  "warnings": [
+    "WARNING: Timeout for _readUntilMatch function.",
+    "WARNING: Message returned from the robot: ",
+    "WARNING: Waited 5.000003337860107 seconds"
+  ]
+}

@@ -31,6 +31,38 @@ BACKUP_DIR_PREFIX = 'calibration_backup_'
 # Settings worth recording before and after, per rack.
 TRACKED_SETTINGS = ['center_x', 'center_y', 'detected_z']
 
+# Every edge a scan reports sits about one pipette-end radius outside the real
+# rack edge: the nozzle keeps pressing on the rack until its centre has passed
+# the edge by its own radius, and only then does the probe drop. Both edges of an
+# axis are pushed outward by the same amount, so
+#
+#     X_measured = X_CAD + D_pipette
+#     Y_measured = Y_CAD + D_pipette
+#
+# The centre is unaffected - the two biases cancel - which is why the centre is
+# the trustworthy output of a calibration and the span between the edges is not.
+#
+# The pipette end is a Rainin LTS for 200 ul tips (p200). It is circular, so the
+# bias is the same on X and Y, and conical: 5.9 mm across at the very end,
+# widening to 6.2 mm ten millimetres up. The 5.9 mm figure is the one that
+# matters here, since it is the end that rides the rack surface.
+#
+# Where max_x / max_y are the true body dimensions, measured span minus max_x
+# reads out the effective diameter. Measured 5.4 mm in X and 5.2 mm in Y against
+# the samples rack body on 2026-08-08 - a little under the geometric 5.9, the
+# load threshold evidently releasing shortly before the rim fully clears the
+# edge.
+#
+# The reports print this per axis. An implausible figure has two possible
+# causes, and they are worth telling apart: either the scan found something
+# other than the two rack edges, in which case the centre is wrong too, or the
+# rack's stored max_x / max_y is not its real body dimension, in which case the
+# centre is fine and only this check is misled. 158 x 180 mm is confirmed
+# against CAD for the samples rack body; the other racks are not.
+PIPETTE_END_DIAMETER = 5.9
+PIPETTE_END_DIAMETER_10MM_UP = 6.2
+PIPETTE_END_DIAMETER_PLAUSIBLE = (3.0, 9.0)
+
 
 def timestamp():
     return datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -99,6 +131,59 @@ def readSettings(rack_names):
     return snapshot
 
 
+def describeSpans(edges, rack_size):
+    """
+    Turns the edge coordinates a calibration found into a per-axis sanity check.
+
+    Returns {axis: {'low', 'high', 'span', 'body', 'implied_pipette_diameter',
+    'plausible'}}. rack_size is (max_x, max_y, max_z) as stored for the rack, the
+    true body dimensions; None skips the comparison.
+    """
+    body_for_axis = {}
+    if rack_size is not None:
+        body_for_axis = {'X': rack_size[0], 'Y': rack_size[1]}
+
+    by_axis = {}
+    for axis, direction, coordinate in edges:
+        if coordinate is None:
+            continue
+        by_axis.setdefault(axis.upper(), []).append(coordinate)
+
+    spans = {}
+    for axis, coordinates in by_axis.items():
+        if len(coordinates) < 2:
+            continue
+        low, high = min(coordinates), max(coordinates)
+        entry = {'low': low, 'high': high, 'span': high - low,
+                 'body': body_for_axis.get(axis),
+                 'implied_pipette_diameter': None, 'plausible': None}
+        if entry['body']:
+            implied = entry['span'] - entry['body']
+            entry['implied_pipette_diameter'] = implied
+            entry['plausible'] = (PIPETTE_END_DIAMETER_PLAUSIBLE[0] <= implied
+                                  <= PIPETTE_END_DIAMETER_PLAUSIBLE[1])
+        spans[axis] = entry
+    return spans
+
+
+def formatSpans(spans, indent="      "):
+    """Report lines for what describeSpans() worked out."""
+    lines = []
+    for axis in sorted(spans):
+        entry = spans[axis]
+        if entry['implied_pipette_diameter'] is None:
+            lines.append("%s%s span %.3f (%.3f .. %.3f)"
+                         % (indent, axis, entry['span'], entry['low'], entry['high']))
+            continue
+        verdict = ("ok" if entry['plausible'] else
+                   "SUSPECT - either the scan missed the rack edges, or this rack's "
+                   "stored body size is wrong")
+        lines.append("%s%s span %.3f vs body %.1f -> pipette end diameter %.3f mm  [%s]"
+                     % (indent, axis, entry['span'], entry['body'],
+                        entry['implied_pipette_diameter'], verdict))
+    return lines
+
+
 class run_record:
     """
     Collects everything observed during a calibration run, prints it as it goes,
@@ -125,10 +210,11 @@ class run_record:
         print(message)
         self.lines.append(message)
 
-    def recordRack(self, rack_name, x, y, z, edges, retries):
+    def recordRack(self, rack_name, x, y, z, edges, retries, rack_size=None):
         self.racks[rack_name] = {
             'center_x': x, 'center_y': y, 'detected_z': z,
             'edges': edges, 'scan_retries': retries,
+            'spans': describeSpans(edges, rack_size),
         }
 
     def captureWarnings(self):
@@ -184,6 +270,7 @@ class run_record:
                              found['detected_z'], found['scan_retries']))
             for axis, direction, coordinate in found['edges']:
                 report.append("      edge %s direction %+d -> %s" % (axis, direction, coordinate))
+            report.extend(formatSpans(found.get('spans', {})))
         report.append("")
         report.append("--- Warnings and errors ---")
         if self.warnings:

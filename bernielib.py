@@ -1819,8 +1819,11 @@ class robot(data):
     def setStairSearchMaxTravel(self, distance):
         """
         How far an edge scan may travel without meeting an edge before it is
-        treated as lost. Keep it near the width of the pipette end (6.5 mm):
-        beyond that the scan cannot still be over the feature it was aimed at.
+        treated as lost. Keep it above the width of the pipette end (5.9 mm for
+        the Rainin LTS p200 end): the nozzle holds contact until its centre has
+        passed the edge by about its own radius, so a scan that has travelled
+        further than a full diameter without meeting a drop is not over the
+        feature it was aimed at.
         """
         self._setSetting('stair_search_max_travel', distance)
 

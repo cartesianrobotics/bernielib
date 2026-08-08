@@ -1,0 +1,67 @@
+Calibration run: tube_racks
+Time: 20260808_000528
+Racks: samples, reagents, tips
+Results kept: yes
+
+--- Values before and after ---
+  samples:
+    center_x     88.0       -> 86.89999999999999   (-1.100)
+    center_y     102.1      -> 102.1        (+0.000)
+    detected_z   152.4      -> 152.1        (-0.300)
+  reagents:
+    center_x     88.0       -> 86.89999999999999   (-1.100)
+    center_y     102.1      -> 102.1        (+0.000)
+    detected_z   152.4      -> 152.1        (-0.300)
+  tips:
+    center_x     70.12      -> 69.02        (-1.100)
+    center_y     75.1       -> 75.1         (+0.000)
+    detected_z   147.2      -> 147.2        (+0.000)
+
+--- What each scan found ---
+  samples: center (86.900, 102.100), Z 152.100, scan retries 0
+      edge X direction -1 -> 5.2
+      edge X direction +1 -> 168.6
+      edge Y direction -1 -> 9.5
+      edge Y direction +1 -> 194.7
+
+--- Warnings and errors ---
+  WARNING: Timeout for _readUntilMatch function.
+  WARNING: Message returned from the robot: 
+  WARNING: Waited 5.000003337860107 seconds
+
+--- Session output ---
+  Measuring: samples
+  Copying the samples result to reagents (same physical rack).
+  Re-seeding the tips rack centre from samples.
+  Not touching the waste bin (pass --with-waste to include it).
+  
+  Current values:
+    samples   center (88.0, 102.1), detected_z 152.4
+    reagents  center (88.0, 102.1), detected_z 152.4
+    tips      center (70.12, 75.1), detected_z 147.2
+  
+  Previous settings backed up to calibration_backup_20260808_000528/
+  Connecting (bernielib scans the serial ports; this takes a moment)...
+    cartesian: COM3
+    loadcell:  COM10
+  
+  Homing, then ejecting any tip (a tip would corrupt every height)...
+  
+  --- Calibrating samples ---
+      center (86.900, 102.100), Z 152.100
+      edge X direction -1 -> 5.2
+      edge X direction +1 -> 168.6
+      edge Y direction -1 -> 9.5
+      edge Y direction +1 -> 194.7
+      reagents shares the samples body: centre (86.900, 102.100) and Z 152.100 copied across
+      tips rack centre re-seeded: (69.020, 75.100)
+      (an estimate, not a measurement - run calibrate_tips_rack.py to measure it)
+  
+  Finishing: ejecting any tip, then homing...
+  Ports closed.
+  
+  --- Result ---
+    samples   center (88.0, 102.1) -> (86.89999999999999, 102.1), detected_z 152.4 -> 152.1
+    reagents  center (88.0, 102.1) -> (86.89999999999999, 102.1), detected_z 152.4 -> 152.1
+    tips      center (70.12, 75.1) -> (69.02, 75.1), detected_z 147.2 -> 147.2
+    3 warning(s) logged; see the report.

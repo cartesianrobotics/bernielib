@@ -1,0 +1,56 @@
+Calibration run: tips_rack
+Time: 20260808_002756
+Racks: tips
+Results kept: yes
+
+--- Values before and after ---
+  tips:
+    center_x     69.02      -> 69.02        (+0.000)
+    center_y     75.1       -> 74.3         (-0.800)
+    detected_z   147.2      -> 147.4        (+0.200)
+
+--- What each scan found ---
+  tips: center (69.020, 74.300), Z 147.400, scan retries 0
+      edge X direction -1 -> 23.395
+      edge X direction +1 -> 114.645
+      edge Y direction -1 -> 10.65
+      edge Y direction +1 -> 137.95
+      X span 91.250 vs body 87.2 -> pipette end diameter 4.000 mm  [ok]
+      Y span 127.300 vs body 124.5 -> pipette end diameter 2.800 mm  [SUSPECT - scan may have found the wrong edges]
+
+--- Warnings and errors ---
+  WARNING: Timeout for _readUntilMatch function.
+  WARNING: Message returned from the robot: 
+  WARNING: Waited 5.00000262260437 seconds
+
+--- Session output ---
+  Calibrating the old tips rack (settings file tips.json).
+  
+  Current values:
+    center (69.02, 75.1), detected_z 147.2
+    the X edge scans will start at 25.395 and 112.645
+    if those are not within a millimetre or two of the real rack edges,
+    run calibrate_tube_racks.py first to re-seed this centre.
+  
+  Previous settings backed up to calibration_backup_20260808_002756/
+  Connecting (bernielib scans the serial ports; this takes a moment)...
+    cartesian: COM3
+    loadcell:  COM10
+  
+  Homing, then ejecting any tip (a tip would corrupt every height)...
+  
+  --- Calibrating the tips rack ---
+      center (69.020, 74.300), Z 147.400
+      edge X direction -1 -> 23.395
+      edge X direction +1 -> 114.645
+      edge Y direction -1 -> 10.65
+      edge Y direction +1 -> 137.95
+      No scan needed to back off; the stored centre was close enough.
+  
+  Finishing: ejecting any tip, then homing...
+  Ports closed.
+  
+  --- Result ---
+    center (69.02, 75.1) -> (69.02, 74.3)
+    detected_z 147.2 -> 147.4
+    3 warning(s) logged; see the report.

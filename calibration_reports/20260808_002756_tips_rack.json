@@ -1,0 +1,76 @@
+{
+  "title": "tips_rack",
+  "timestamp": "20260808_002756",
+  "racks": [
+    "tips"
+  ],
+  "results_kept": true,
+  "aborted": null,
+  "before": {
+    "tips": {
+      "center_x": 69.02,
+      "center_y": 75.1,
+      "detected_z": 147.2
+    }
+  },
+  "after": {
+    "tips": {
+      "center_x": 69.02,
+      "center_y": 74.3,
+      "detected_z": 147.4
+    }
+  },
+  "found": {
+    "tips": {
+      "center_x": 69.02,
+      "center_y": 74.3,
+      "detected_z": 147.4,
+      "edges": [
+        [
+          "X",
+          -1,
+          23.395
+        ],
+        [
+          "X",
+          1,
+          114.645
+        ],
+        [
+          "Y",
+          -1,
+          10.65
+        ],
+        [
+          "Y",
+          1,
+          137.95
+        ]
+      ],
+      "scan_retries": 0,
+      "spans": {
+        "X": {
+          "low": 23.395,
+          "high": 114.645,
+          "span": 91.25,
+          "body": 87.25,
+          "implied_pipette_diameter": 4.0,
+          "plausible": true
+        },
+        "Y": {
+          "low": 10.65,
+          "high": 137.95,
+          "span": 127.29999999999998,
+          "body": 124.5,
+          "implied_pipette_diameter": 2.799999999999983,
+          "plausible": false
+        }
+      }
+    }
+  },
+  "warnings": [
+    "WARNING: Timeout for _readUntilMatch function.",
+    "WARNING: Message returned from the robot: ",
+    "WARNING: Waited 5.00000262260437 seconds"
+  ]
+}

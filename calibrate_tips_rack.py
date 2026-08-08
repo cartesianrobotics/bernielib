@@ -90,7 +90,8 @@ def main():
         record.say("--- Calibrating the tips rack ---")
         with instrumented_scan(ber) as watch:
             x, y, z = ber.calibrateRack(rack=RACK)
-        record.recordRack(rack_settings_name, x, y, z, watch.edges, watch.retries)
+        record.recordRack(rack_settings_name, x, y, z, watch.edges, watch.retries,
+                          rack_size=ber._getRackObjectByName(rack_name=RACK).getRackSize())
         record.say("    center (%.3f, %.3f), Z %.3f" % (x, y, z))
         for axis, direction, coordinate in watch.edges:
             record.say("    edge %s direction %+d -> %s" % (axis, direction, coordinate))
