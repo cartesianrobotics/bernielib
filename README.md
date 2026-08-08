@@ -78,7 +78,9 @@ Both come in under the geometric 5.9 mm, because the load threshold releases
 before the rim fully clears the edge. The tips box comes in lower still: its rim
 is not the clean vertical step the samples plate has, and beyond it the nozzle
 lands on the samples frame only ~4.7 mm below rather than dropping away, so the
-scan calls the edge at a smaller lateral offset.
+scan calls the edge at a smaller lateral offset. The box is also thin flexible
+plastic, which may give under the probing load and let the nozzle start down
+earlier than a rigid edge would — plausible, but not established.
 
 **So compare a run against earlier runs of the same rack, not against 5.9.** The
 reports flag anything outside 3–9 mm, which is only a coarse net for a scan that

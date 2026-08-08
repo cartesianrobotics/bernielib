@@ -63,8 +63,10 @@ TRACKED_SETTINGS = ['center_x', 'center_y', 'detected_z']
 # The tips box reads lower on both axes and lower again on Y. Its rim is not the
 # clean vertical step the samples plate has, and beyond it the nozzle lands on
 # the samples frame only about 4.7 mm below rather than dropping away entirely,
-# so the scan calls the edge at a smaller lateral offset. None of this affects
-# the centre, which is what calibration stores.
+# so the scan calls the edge at a smaller lateral offset. The box is also thin
+# flexible plastic, which may give under the probing load and let the nozzle
+# start down sooner than a rigid edge would - plausible, but not established.
+# None of this affects the centre, which is what calibration stores.
 #
 # So compare a run against earlier runs of the SAME rack, not against 5.9. The
 # range below is only a coarse net for a scan that has gone badly wrong.
