@@ -1,11 +1,20 @@
 """
-Calibrate the tube racks only - samples, reagents and the waste bin - and
-re-seed the tips rack centre from the result.
+Calibrate the sample rack, and carry the result to the racks that share its body.
 
-This is the first half of calibrate.py, split out so the deck can be re-measured
-without also redoing the tips rack. The samples rack is the reference for the
-whole deck, so once it has been measured the tips rack centre is moved with it,
-ready for calibrate_tips_rack.py to scan from a sensible starting point.
+The samples and reagents "racks" are one physical part described twice: their
+centre, size, calibration style, calibration Z and detected Z are all identical
+in the settings, and only the well maps differ - two columns of twelve tubes for
+samples, three by two large wells for reagents. Measuring both means feeling for
+the same four edges twice, so this script measures once, as 'samples', and
+copies the result to 'reagents'. Skipping reagents altogether would leave its
+stored centre behind whenever the deck moved.
+
+Once the samples rack is measured it also re-seeds the tips rack centre, ready
+for calibrate_tips_rack.py to scan from a sensible starting point.
+
+The waste bin is a separate part and is not measured unless --with-waste is
+given. It is rarely disturbed, and the pipette only ever needs to be somewhere
+above it.
 
 Results are written to the real settings files, so everything downstream uses
 them. The previous values are backed up first, and every run leaves a report in
@@ -15,12 +24,13 @@ values, how many edge scans had to back off and retry, and any warnings.
 Before running:
   - no tubes anywhere in the working area (the scans travel about 2 mm above
     the rack surface, so anything standing in a well is in the path)
-  - the waste bin in place
+  - the waste bin in place (a tip is ejected into it before and after the run)
   - nothing on the pipette nozzle (the script ejects a tip anyway, as a
     precaution)
 
     python calibrate_tube_racks.py                     # show the plan, move nothing
     python calibrate_tube_racks.py --move-the-robot    # calibrate
+    python calibrate_tube_racks.py --move-the-robot --with-waste
     python calibrate_tube_racks.py --move-the-robot --revert    # trial run
 
 Part of BernieLib.
@@ -34,39 +44,66 @@ from calibration_common import (parseArgs, requireRepoRootCwd, backupSettings,
                                 instrumented_scan, connectAndPrepare, finish)
 
 
-DEFAULT_RACKS = ['samples', 'reagents', 'waste']
+MEASURED_RACK = 'samples'
+# Shares the same physical body as MEASURED_RACK; takes its result rather than
+# being measured again.
+MIRRORED_RACK = 'reagents'
 SEEDED_RACK = 'tips'
+OPTIONAL_RACK = 'waste'
 
 
 def addArgs(parser):
-    parser.add_argument('--racks', default=",".join(DEFAULT_RACKS),
-                        help="Comma separated subset of %s. Default: all."
-                             % ",".join(DEFAULT_RACKS))
+    parser.add_argument('--with-waste', action='store_true',
+                        help="Also calibrate the waste bin. Off by default: it is a "
+                             "separate part, rarely moved, and only ever approached "
+                             "from above.")
+    parser.add_argument('--no-mirror-reagents', action='store_true',
+                        help="Do not copy the samples result onto the reagents rack. "
+                             "Only useful if the two stop sharing a body.")
     parser.add_argument('--no-seed-tips', action='store_true',
                         help="Skip moving the tips rack centre with the samples rack. "
                              "Worth using if the two racks turn out not to track each "
                              "other; see DEVLOG.md for 2026-08-07.")
 
 
+def mirrorRackBody(ber, source_name, target_name, record):
+    """
+    Copies the measured geometry of one rack onto another that is physically the
+    same part. Only the values calibration produces are copied; the well maps,
+    which is all that really differs between them, are left alone.
+    """
+    source = ber._getRackObjectByName(rack_name=source_name)
+    target = ber._getRackObjectByName(rack_name=target_name)
+    x, y = source.getCenterXY()
+    z = source.getZ()
+    target.setCenterXY(x=x, y=y)
+    target.setZ(z)
+    record.say("    %s shares the %s body: centre (%.3f, %.3f) and Z %.3f copied across"
+               % (target_name, source_name, x, y, z))
+
+
 def main():
     args = parseArgs(__doc__, extra=addArgs)
     requireRepoRootCwd()
 
-    racks = [r.strip() for r in args.racks.split(',') if r.strip()]
-    unknown = [r for r in racks if r not in DEFAULT_RACKS]
-    if unknown:
-        sys.exit("Unknown rack(s): %s. Choose from %s." % (unknown, DEFAULT_RACKS))
+    measured = [MEASURED_RACK] + ([OPTIONAL_RACK] if args.with_waste else [])
+    reported = list(measured)
+    if not args.no_mirror_reagents:
+        reported.append(MIRRORED_RACK)
+    if not args.no_seed_tips:
+        reported.append(SEEDED_RACK)
 
-    reported = racks + ([SEEDED_RACK] if not args.no_seed_tips else [])
     record = run_record('tube_racks', reported)
     record.before = readSettings(reported)
 
-    record.say("Calibrating tube racks: %s" % ", ".join(racks))
+    record.say("Measuring: %s" % ", ".join(measured))
+    if not args.no_mirror_reagents:
+        record.say("Copying the %s result to %s (same physical rack)."
+                   % (MEASURED_RACK, MIRRORED_RACK))
     if not args.no_seed_tips:
-        if 'samples' in racks:
-            record.say("The tips rack centre will be re-seeded from the samples rack.")
-        else:
-            record.say("Tips re-seeding needs the samples rack; it will be skipped.")
+        record.say("Re-seeding the %s rack centre from %s." % (SEEDED_RACK, MEASURED_RACK))
+    if not args.with_waste:
+        record.say("Not touching the waste bin (pass --with-waste to include it).")
     record.say("")
     record.say("Current values:")
     for name in reported:
@@ -88,7 +125,7 @@ def main():
     record.captureWarnings()
     ber = connectAndPrepare(record)
     try:
-        for name in racks:
+        for name in measured:
             record.say("")
             record.say("--- Calibrating %s ---" % name)
             with instrumented_scan(ber) as watch:
@@ -101,20 +138,22 @@ def main():
                 record.say("    NOTE: %d scan(s) ran out of travel and backed off. "
                            "The stored centre was off; it is corrected now." % watch.retries)
 
-            if name == 'samples' and not args.no_seed_tips:
-                seeded = ber.seedRackCenterFromReference(SEEDED_RACK)
-                if seeded is None:
-                    record.say("    tips rack has no recorded offset; centre left alone.")
-                else:
-                    record.say("    tips rack centre re-seeded from samples: (%.3f, %.3f)"
-                               % seeded)
-                    record.say("    (an estimate, not a measurement - run "
-                               "calibrate_tips_rack.py to measure it)")
+            if name == MEASURED_RACK:
+                if not args.no_mirror_reagents:
+                    mirrorRackBody(ber, MEASURED_RACK, MIRRORED_RACK, record)
+                if not args.no_seed_tips:
+                    seeded = ber.seedRackCenterFromReference(SEEDED_RACK)
+                    if seeded is None:
+                        record.say("    tips rack has no recorded offset; centre left alone.")
+                    else:
+                        record.say("    tips rack centre re-seeded: (%.3f, %.3f)" % seeded)
+                        record.say("    (an estimate, not a measurement - run "
+                                   "calibrate_tips_rack.py to measure it)")
     except bl.CalibrationScanError as e:
         record.aborted = str(e)
         record.say("")
         record.say("ABORTED: %s" % e)
-        record.say("Racks calibrated before this point keep their new values.")
+        record.say("Anything calibrated before this point keeps its new values.")
     finally:
         finish(ber, record)
         record.releaseWarnings()
