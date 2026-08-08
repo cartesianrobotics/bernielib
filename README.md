@@ -66,20 +66,28 @@ up. The 5.9 mm figure is the one that applies, since it is the end that rides th
 rack surface.
 
 Where `max_x` / `max_y` are true body dimensions, measured span minus `max_x`
-reads the effective diameter back out. Against the samples rack body — 158 × 180
-mm, confirmed against CAD — it measured 5.4 mm in X and 5.2 mm in Y, a little
-under the geometric 5.9 because the load threshold releases shortly before the
-rim fully clears the edge.
+reads the effective diameter back out. Both bodies are CAD-confirmed, and they do
+not read the same:
 
-The reports print this per axis and flag anything outside 3–9 mm. A flag has two
-possible causes, worth telling apart:
+| Rack | Body (CAD) | Reads back X | Y |
+|---|---|---|---|
+| samples / reagents | 158 × 180 mm | 5.4 mm | 5.2 mm |
+| tips (Rainin box) | 86.8 × 123.7 mm | 4.45 mm | 3.6 mm |
+
+Both come in under the geometric 5.9 mm, because the load threshold releases
+before the rim fully clears the edge. The tips box comes in lower still: its rim
+is not the clean vertical step the samples plate has, and beyond it the nozzle
+lands on the samples frame only ~4.7 mm below rather than dropping away, so the
+scan calls the edge at a smaller lateral offset.
+
+**So compare a run against earlier runs of the same rack, not against 5.9.** The
+reports flag anything outside 3–9 mm, which is only a coarse net for a scan that
+has gone badly wrong. A flag has two possible causes, worth telling apart:
 
 - the scan found something other than the two rack edges, so the centre is wrong
   too — the 2026-08-07 runaway would have reported 2.3 mm;
 - the rack's stored `max_x` / `max_y` is not its real body size, so the centre is
-  fine and only this check is misled. Only the samples body is CAD-confirmed; the
-  tips rack reads 4.0 mm in X and 2.8 mm in Y, which suggests its stored 87.25 ×
-  124.5 is about 2–3 mm too large rather than that its calibration is bad.
+  fine and only this check is misled.
 
 ## Checking the robot
 

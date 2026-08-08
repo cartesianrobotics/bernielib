@@ -53,12 +53,26 @@ TRACKED_SETTINGS = ['center_x', 'center_y', 'detected_z']
 # load threshold evidently releasing shortly before the rim fully clears the
 # edge.
 #
-# The reports print this per axis. An implausible figure has two possible
-# causes, and they are worth telling apart: either the scan found something
-# other than the two rack edges, in which case the centre is wrong too, or the
-# rack's stored max_x / max_y is not its real body dimension, in which case the
-# centre is fine and only this check is misled. 158 x 180 mm is confirmed
-# against CAD for the samples rack body; the other racks are not.
+# The figure that comes back is not the same for every rack, because it depends
+# on the edge profile and on how far there is to fall beyond it. Measured on
+# 2026-08-08, with both bodies confirmed against CAD:
+#
+#     samples body, 158 x 180 mm      X 5.4    Y 5.2
+#     tips box,     86.8 x 123.7 mm   X 4.45   Y 3.6
+#
+# The tips box reads lower on both axes and lower again on Y. Its rim is not the
+# clean vertical step the samples plate has, and beyond it the nozzle lands on
+# the samples frame only about 4.7 mm below rather than dropping away entirely,
+# so the scan calls the edge at a smaller lateral offset. None of this affects
+# the centre, which is what calibration stores.
+#
+# So compare a run against earlier runs of the SAME rack, not against 5.9. The
+# range below is only a coarse net for a scan that has gone badly wrong.
+#
+# An implausible figure has two possible causes, worth telling apart: either the
+# scan found something other than the two rack edges, in which case the centre is
+# wrong too, or the rack's stored max_x / max_y is not its real body dimension,
+# in which case the centre is fine and only this check is misled.
 PIPETTE_END_DIAMETER = 5.9
 PIPETTE_END_DIAMETER_10MM_UP = 6.2
 PIPETTE_END_DIAMETER_PLAUSIBLE = (3.0, 9.0)
