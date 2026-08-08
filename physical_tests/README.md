@@ -46,6 +46,22 @@ collision.
 |---|---|---|
 | `physical_test_edge_search.py` | The edge scan stops after 8 mm rather than walking across the deck, backs off 4 mm past its start, and finds the real edge on the retry. Reproduces the 2026-08-07 calibration runaway. | **Calibrate the tips rack first** — the test derives the true edge from the stored centre and starts a known 2 mm outside it. A stale centre means it starts somewhere else entirely and the test measures nothing. |
 
+## Experiments
+
+These live here too, named `physical_experiment_*.py`. They answer a question
+rather than assert a pass or fail, but they move the robot, so they use the same
+harness and the same `--move-the-robot` gate.
+
+| File | Question |
+|---|---|
+| `physical_experiment_side_load.py` | Do the load cells register a sideways approach at all? |
+| `physical_experiment_side_edge_find.py` | Can a rack edge be found sideways, and does it agree with Z-tapping? |
+
+Findings, the datasets, and — importantly — **the conclusions that turned out to
+be wrong and why** are written up in
+[`../experiment_reports/README.md`](../experiment_reports/README.md). Read that
+before relying on any number these produce.
+
 Each test deliberately leaves calibration alone: a full rack calibration is slow
 and is not what these are testing.
 

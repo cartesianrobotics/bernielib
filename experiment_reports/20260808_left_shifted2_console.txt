@@ -1,0 +1,49 @@
+WARNING:root:Timeout for _readUntilMatch function.
+WARNING:root:Message returned from the robot: 
+WARNING:root:Waited 5.000002384185791 seconds
+Plan: samples, top plane Z 152.10
+  background at Z 132.10, working at Z 157.10  (20.0 above / 5.0 below the plane)
+  spike when increment >= 5.0x previous, or corrected >= 70; then 3 cycles of 0.10 mm
+  left   X edge, nominal  165.90, touch near  168.85, walk  169.90 ->  165.90 along X at Y=102.10
+         compare against: Z-tapping 168.600 (20260808_000528_tube_racks.json)
+  travel between sides happens at the safe height Z=132.10
+Connecting (bernielib scans the serial ports; this takes a moment)...
+  cartesian: COM3
+  loadcell:  COM10
+
+--- Preparing: homing, then ejecting any tip ---
+
+########## LEFT (X EDGE) ##########
+
+=== 1. Background, 20.0 mm above the plane ===
+    baseline left +13.891 (sd 0.219), right +1.321 (sd 0.460)
+    9 points, drift spans left -8.594, right +13.082
+
+=== 2. Working pass, 5.0 mm below the plane, background subtracted ===
+    X         left dev / bg / corr     right dev / bg / corr    signal    ratio
+    169.900    -0.902  -0.928  +0.026   +1.010  +2.096  -1.086  1.086       -  
+    169.400    -1.425  -2.101  +0.676   +1.833  +3.859  -2.026  2.026     0.87
+    flat band 2.026 over 2 steps -> contact above 6.08
+    168.900   -35.395  -3.621 -31.774  +38.293  +5.602 +32.691  32.691    32.62
+    -> corrected signal 32.7 is over the 6.08 band threshold: contact
+  [PASS] left (X edge): contact detected  -- spike at 168.900, corrected signal 32.7
+    contact counts as present above a corrected signal of 6.08
+
+=== 3. Fine crossings, 0.10 mm steps ===
+    cycle 1: released at 169.100, contacted at 168.900
+    cycle 2: released at 169.100, contacted at 169.000
+    cycle 3: released at 169.100, contacted at 169.000
+    retreated clear, lifted to the safe height Z=132.10
+  [PASS] left (X edge): crossings agree with each other  -- mean 168.967, spread 0.058 over 3
+  [PASS] left (X edge): agrees with Z-tapping to within 0.5 mm  -- sideways 168.967, Z-tapping 168.600, difference +0.367
+
+--- Finishing: ejecting any tip, then homing ---
+Ports closed.
+
+########## SUMMARY ##########
+  side    axis    sideways  Z-tapping difference
+  left    X        168.967    168.600      0.367
+
+Data: experiment_reports\20260808_031611_side_edge_find.csv
+
+--- 3 checks, 0 failed ---

@@ -1,0 +1,51 @@
+WARNING:root:Timeout for _readUntilMatch function.
+WARNING:root:Message returned from the robot: 
+WARNING:root:Waited 5.000005722045898 seconds
+Plan: samples, top plane Z 152.10
+  background at Z 132.10, working at Z 157.10  (20.0 above / 5.0 below the plane)
+  spike when increment >= 5.0x previous, or corrected >= 70; then 3 cycles of 0.10 mm
+  left   X edge, nominal  165.90, touch near  168.85, walk  170.90 ->  165.90 along X at Y=102.10
+         compare against: Z-tapping 168.600 (20260808_000528_tube_racks.json)
+  travel between sides happens at the safe height Z=132.10
+Connecting (bernielib scans the serial ports; this takes a moment)...
+  cartesian: COM3
+  loadcell:  COM10
+
+--- Preparing: homing, then ejecting any tip ---
+
+########## LEFT (X EDGE) ##########
+
+=== 1. Background, 20.0 mm above the plane ===
+    baseline left +8.560 (sd 0.177), right +1.070 (sd 0.471)
+    11 points, drift spans left -10.960, right +15.897
+
+=== 2. Working pass, 5.0 mm below the plane, background subtracted ===
+    X         left dev / bg / corr     right dev / bg / corr    signal    ratio
+    170.900    -0.842  -1.643  +0.802   +1.047  +2.687  -1.640  1.640       -  
+    170.400    -1.522  -2.807  +1.285   +2.044  +4.393  -2.350  2.350     0.43
+    169.900    -2.775  -3.703  +0.928   +3.184  +5.620  -2.436  2.436     0.12
+    169.400    -3.492  -4.783  +1.292   +4.234  +7.330  -3.096  3.096       -  
+    flat band 3.096 over 4 steps -> contact above 9.29
+    168.900   -28.555  -5.587 -22.968  +30.840  +8.817 +22.024  22.968    30.11
+    -> corrected signal 23.0 is over the 9.29 band threshold: contact
+  [PASS] left (X edge): contact detected  -- spike at 168.900, corrected signal 23.0
+    contact counts as present above a corrected signal of 9.29
+
+=== 3. Fine crossings, 0.10 mm steps ===
+    cycle 1: released at 169.000, contacted at 168.900
+    cycle 2: released at 169.100, contacted at 168.900
+    cycle 3: released at 169.000, contacted at 168.900
+    retreated clear, lifted to the safe height Z=132.10
+  [PASS] left (X edge): crossings agree with each other  -- mean 168.900, spread 0.000 over 3
+  [PASS] left (X edge): agrees with Z-tapping to within 0.5 mm  -- sideways 168.900, Z-tapping 168.600, difference +0.300
+
+--- Finishing: ejecting any tip, then homing ---
+Ports closed.
+
+########## SUMMARY ##########
+  side    axis    sideways  Z-tapping difference
+  left    X        168.900    168.600      0.300
+
+Data: experiment_reports\20260808_031211_side_edge_find.csv
+
+--- 3 checks, 0 failed ---

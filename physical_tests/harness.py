@@ -32,17 +32,22 @@ import bernielib as bl
 CONFIRM_FLAG = '--move-the-robot'
 
 
-def parseArgs(description):
+def parseArgs(description, extra=None):
     """
     Every physical test needs --move-the-robot before it will move anything.
     Without it the test prints what it would do and exits, so that running the
     file out of curiosity cannot start the machine.
+
+    `extra` is an optional callback taking the parser, for tests with their own
+    arguments.
     """
     parser = argparse.ArgumentParser(
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(CONFIRM_FLAG, action='store_true', dest='confirmed',
                         help="Required to actually move. Stand at the robot before using it.")
+    if extra is not None:
+        extra(parser)
     return parser.parse_args()
 
 
