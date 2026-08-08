@@ -3,3 +3,8 @@ __pycache__
 /*.log
 *.log
 .venv/
+# Per-run rollback copies. The calibration history worth keeping lives in
+# calibration_reports/, which records the before and after values; these are
+# just the immediate undo. calibration_backup_20260807_2114/ predates this rule
+# and stays tracked - it holds the corrupted tips.json from the runaway.
+calibration_backup_*/
