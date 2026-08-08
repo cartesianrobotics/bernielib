@@ -35,10 +35,21 @@ import sys
 from harness import parseArgs, requireRepoRootCwd, physical_test, checklist
 
 
-# How far outside the true edge to start. The real failure was 2 mm.
-START_OUTSIDE_EDGE = 2.0
-# Tolerance when comparing the found edge with the stored one, mm.
-EDGE_TOLERANCE = 1.5
+# How far outside the nominal edge to start.
+#
+# This has to exceed the contact bias, or the test cannot do its job. The nozzle
+# goes on pressing the rack until its centre has passed the edge by about its own
+# radius, so a start only 2 mm out - as this test first had - is still resting on
+# the rack, finds the edge at once, and never produces the runaway it is meant to
+# reproduce. That is exactly what happened on the first attempt. The bias
+# measured 2.2 mm on the tips box, so 5 mm clears it with a couple of millimetres
+# to spare, while still leaving the 4 mm backstep landing back on the rack.
+START_OUTSIDE_EDGE = 5.0
+# The scan reports an edge up to one pipette-end radius inside the nominal one,
+# for the same reason. Accept anything within a full diameter inside the nominal
+# edge, and no more than a step outside it. A runaway would land far outside this.
+EDGE_WINDOW_INSIDE = 5.9    # calibration_common.PIPETTE_END_DIAMETER
+EDGE_WINDOW_OUTSIDE = 1.0
 
 
 def describePlan(ber_settings):
@@ -53,7 +64,9 @@ def describePlan(ber_settings):
           % (start_x - max_travel, max_travel))
     print("  expected: retry restarts at                  : %.3f  (%.0f mm past the start)"
           % (start_x + backtrack, backtrack))
-    print("  expected: edge then found near               : %.3f" % true_edge)
+    print("  expected: edge then reported between         : %.3f and %.3f"
+          % (true_edge - EDGE_WINDOW_INSIDE, true_edge + EDGE_WINDOW_OUTSIDE))
+    print("            (the scan reads up to one nozzle radius inside the nominal edge)")
 
 
 def main():
@@ -84,8 +97,8 @@ def main():
 
     if not args.confirmed:
         print("\nNothing moved. Re-run with --move-the-robot to perform the test.")
-        print("Make sure the tips rack has been calibrated recently, or the")
-        print("starting point above is not really 2 mm outside the edge.")
+        print("Make sure the tips rack has been calibrated recently, or the starting")
+        print("point above is not really %.1f mm outside the edge." % START_OUTSIDE_EDGE)
         return 0
 
     results = checklist()
@@ -182,11 +195,14 @@ def main():
             str(error) if error else "edge at X=%.3f" % edge)
 
         if edge is not None:
+            low = true_edge - EDGE_WINDOW_INSIDE
+            high = true_edge + EDGE_WINDOW_OUTSIDE
             results.check(
                 "the edge found is the real one",
-                abs(edge - true_edge) <= EDGE_TOLERANCE,
-                "found %.3f, stored edge %.3f, difference %.3f"
-                % (edge, true_edge, edge - true_edge))
+                low <= edge <= high,
+                "found %.3f, nominal edge %.3f, acceptable %.3f..%.3f "
+                "(the scan reads up to one nozzle radius inside)"
+                % (edge, true_edge, low, high))
 
         results.check(
             "one backstep was enough for a %.1f mm miss" % START_OUTSIDE_EDGE,
