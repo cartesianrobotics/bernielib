@@ -57,19 +57,41 @@ if __name__ == '__main__':
     if homing_success != 'y':
         sys.exit("Homing failed according to the user. Start troubleshooting.")
     
-    print("Now calibrating the samples rack. Please wait...")
-    logging.info("Starting the calibration")
-    ber.calibrateRack(rack='samples')
-    print("Sample rack calibration finished.")
-    print("Now calibrating the reagents rack. Please wait...")
-    ber.calibrateRack(rack='reagents')
-    print("Reagents rack calibration finished.")
-    print("Now calibrating the waste bin. Please wait...")
-    ber.calibrateRack(rack='waste')
-    print("Waste bin calibration finished.")
-    print("Now calibrating the 'old'-style tips rack. Please wait...")
-    ber.calibrateRack(rack='tips')
-    print("Old-style tips rack calibration finished.")
+    try:
+        print("Now calibrating the samples rack. Please wait...")
+        logging.info("Starting the calibration")
+        ber.calibrateRack(rack='samples')
+        print("Sample rack calibration finished.")
+
+        # The samples rack is the reference for the whole deck. Now that it has
+        # been measured, move the tips rack's stored centre with it, so the tips
+        # edge scan starts on the rack even if the deck has shifted since the
+        # last calibration. Without this, a shifted deck sends that scan looking
+        # for an edge that is no longer where it was recorded.
+        seeded = ber.seedRackCenterFromReference('tips')
+        if seeded is not None:
+            print("Tips rack centre re-seeded from the samples rack: x=%.2f, y=%.2f" % seeded)
+
+        print("Now calibrating the reagents rack. Please wait...")
+        ber.calibrateRack(rack='reagents')
+        print("Reagents rack calibration finished.")
+        print("Now calibrating the waste bin. Please wait...")
+        ber.calibrateRack(rack='waste')
+        print("Waste bin calibration finished.")
+        print("Now calibrating the 'old'-style tips rack. Please wait...")
+        ber.calibrateRack(rack='tips')
+        print("Old-style tips rack calibration finished.")
+    except bl.CalibrationScanError as e:
+        logging.error("Calibration aborted: %s", e)
+        print("")
+        print("CALIBRATION ABORTED - the robot could not find a rack edge where it expected one.")
+        print(str(e))
+        print("Nothing further has been calibrated; settings already written this run are kept.")
+        print("Homing, then exiting.")
+        ber.home()
+        ber.powerStepperOff()
+        ber.close()
+        sys.exit(1)
     
     mt_rack = input("If you like to calibrate a Mettler Toledo tips rack, please press y: ")
     if mt_rack == 'y':

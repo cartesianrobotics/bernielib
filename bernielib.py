@@ -52,6 +52,23 @@ expected_response_dict = {
     'cartesian': SMOOTHIE_STATUS_REPLY,
 }
 
+# Defaults for the bounded edge search, used when robot.json does not carry them.
+# An edge scan that has travelled further than the pipette end is wide is no
+# longer measuring the object it was aimed at; it is somewhere else entirely.
+STAIR_SEARCH_MAX_TRAVEL = 8     # mm to scan without meeting an edge before giving up
+STAIR_SEARCH_BACKTRACK = 4      # mm to shift the other way before scanning again
+STAIR_SEARCH_MAX_RETRIES = 5    # attempts to shift and rescan before aborting
+
+
+class CalibrationScanError(Exception):
+    """
+    Raised when an edge scan cannot find an edge anywhere near where the stored
+    calibration said one would be. Aborting is deliberate: the alternative is
+    writing a plausible-looking but wrong centre into the rack settings.
+    """
+    pass
+
+
 class robot(data):
     """
     Handles all robot operations
@@ -1796,42 +1813,168 @@ class robot(data):
         return step_list, z_increment, z_retract, z_max_travel, z_threshold
 
 
-    def scanForStair(self, axis, step, direction, depth=5):
+    # Bounds for the edge search. Each falls back to the module default, so an
+    # older robot.json without these keys still works.
+
+    def setStairSearchMaxTravel(self, distance):
+        """
+        How far an edge scan may travel without meeting an edge before it is
+        treated as lost. Keep it near the width of the pipette end (6.5 mm):
+        beyond that the scan cannot still be over the feature it was aimed at.
+        """
+        self._setSetting('stair_search_max_travel', distance)
+
+    def getStairSearchMaxTravel(self):
+        value = self._getSetting('stair_search_max_travel')
+        return STAIR_SEARCH_MAX_TRAVEL if value is None else value
+
+    def setStairSearchBacktrack(self, distance):
+        """
+        How far to shift the start point, against the scan direction, before
+        trying again after a scan found no edge.
+        """
+        self._setSetting('stair_search_backtrack', distance)
+
+    def getStairSearchBacktrack(self):
+        value = self._getSetting('stair_search_backtrack')
+        return STAIR_SEARCH_BACKTRACK if value is None else value
+
+    def setStairSearchMaxRetries(self, retries):
+        """
+        How many times to shift and rescan before giving up. Bounded so that a
+        repeatedly failing scan cannot creep across the deck one retry at a time.
+        """
+        self._setSetting('stair_search_max_retries', retries)
+
+    def getStairSearchMaxRetries(self):
+        value = self._getSetting('stair_search_max_retries')
+        return STAIR_SEARCH_MAX_RETRIES if value is None else value
+
+
+    def seedRackCenterFromReference(self, rack_name):
+        """
+        Re-seeds the stored centre of a rack from the centre of the rack it is
+        mechanically fixed to, which must already have been calibrated.
+
+        An edge scan starts from the stored centre. If the deck has shifted since
+        that centre was measured, the scan can begin past the rack edge and find
+        nothing - which is how the tips rack once calibrated 7 mm out. Racks that
+        sit at a fixed offset from another rack do not need to guess: taking the
+        freshly measured centre of the reference rack and adding the offset puts
+        the scan back within a millimetre or so of the true edge.
+
+        Requires setCenterOffsetFromReference() to have been set on the rack.
+        Returns the new (x, y), or None if no offset is recorded.
+        """
+        r = self._getRackObjectByName(rack_name=rack_name)
+        dx, dy, reference_rack = r.getCenterOffsetFromReference()
+        if dx is None:
+            logging.warning("seedRackCenterFromReference: rack %s has no recorded offset; "
+                            "leaving its centre alone.", rack_name)
+            return
+        ref = self._getRackObjectByName(rack_name=reference_rack)
+        x_ref, y_ref = ref.getCenterXY()
+        x_old, y_old = r.getCenterXY()
+        x_new, y_new = x_ref + dx, y_ref + dy
+        r.setCenterXY(x=x_new, y=y_new)
+        logging.info("Rack %s centre re-seeded from %s: (%s, %s) -> (%s, %s)",
+                     rack_name, reference_rack, x_old, y_old, x_new, y_new)
+        return x_new, y_new
+
+
+    def scanForStair(self, axis, step, direction, depth=5, max_travel=None):
         """
         Detects abrupt drop in height (like a hole for a tube)
+
+        Returns the coordinate at which the drop was found, or None if the scan
+        travelled max_travel mm without meeting one. None means the pipette did
+        not start where the caller assumed it did, and that stepping any further
+        would only take it further from the object it was aimed at.
         """
         step_list, z_increment, z_retract, z_max_travel, z_threshold = self.getPositioningParameters()
-        
+        if max_travel is None:
+            max_travel = self.getStairSearchMaxTravel()
+
         initial_z = self.getPosition(axis='Z')
         #initial_z = self.moveDownUntilPress(step=z_increment, threshold=z_threshold)
         z_trigger = initial_z
+        travelled = 0
         while abs(initial_z - z_trigger) < z_max_travel:
+            if travelled >= max_travel:
+                logging.warning("scanForStair: no edge within %s mm along %s (direction %s).",
+                                max_travel, axis, direction)
+                return None
             self.moveAxis('Z', initial_z)
             #self.moveAxisDelta('Z', z_retract)
             self.moveAxisDelta(axis, step*direction)
-            z_trigger = self.moveDownUntilPress(step=z_increment, 
+            travelled += abs(step)
+            z_trigger = self.moveDownUntilPress(step=z_increment,
                             threshold=z_threshold, z_max=initial_z+depth)
-            #print (z_trigger, abs(initial_z - z_trigger), z_max_travel)           
+            #print (z_trigger, abs(initial_z - z_trigger), z_max_travel)
         stair_coord = self.getPosition(axis=axis)
         return stair_coord
 
-    
+
     def scanForStairFine(self, axis, direction):
-        
+        """
+        Finds an edge along the given axis, scanning in the given direction and
+        refining the result with each step size in the step list.
+
+        If a scan runs out of travel without meeting an edge, the pipette was not
+        where the caller believed it to be - a stale rack centre, for example.
+        Rather than keep stepping (which is how a tips scan once walked 16 mm
+        across onto the neighbouring rack), it returns to where that attempt
+        began, shifts getStairSearchBacktrack() mm the OTHER way, and scans
+        again. After getStairSearchMaxRetries() attempts it gives up and raises
+        CalibrationScanError, rather than record a wrong edge.
+        """
         step_list, z_increment, z_retract, z_max_travel, z_threshold = self.getPositioningParameters()
-        
-        initial_z = self.moveDownUntilPress(step=z_increment, threshold=z_threshold)
-        self.moveAxisDelta('Z', z_retract)
-        
-        for step in step_list:
-            z_start = self.getPosition(axis="Z")
-            coord = self.scanForStair(axis=axis, step=step, direction=direction)
-            # Preparing to detect a stair with finer step
-            # Moving up to initial height
-            self.moveAxis('Z', z_start)
-            # Moving one step back
-            self.moveAxisDelta(axis, -step*direction)
-        return coord
+        max_travel = self.getStairSearchMaxTravel()
+        backtrack = self.getStairSearchBacktrack()
+        max_retries = self.getStairSearchMaxRetries()
+
+        # Where this scan was told to start from, and the height it arrived at.
+        # Both are needed to put the pipette back for another attempt.
+        attempt_start = self.getPosition(axis=axis)
+        safe_z = self.getPosition(axis='Z')
+
+        for attempt in range(max_retries + 1):
+            initial_z = self.moveDownUntilPress(step=z_increment, threshold=z_threshold)
+            self.moveAxisDelta('Z', z_retract)
+
+            coord = None
+            for step in step_list:
+                z_start = self.getPosition(axis="Z")
+                coord = self.scanForStair(axis=axis, step=step, direction=direction,
+                                          max_travel=max_travel)
+                # Moving up to initial height
+                self.moveAxis('Z', z_start)
+                if coord is None:
+                    break
+                # Preparing to detect a stair with finer step
+                # Moving one step back
+                self.moveAxisDelta(axis, -step*direction)
+
+            if coord is not None:
+                return coord
+
+            if attempt >= max_retries:
+                break
+
+            # Nothing found within reach. Shift the start point the other way -
+            # if the scan began past the edge, this brings it back onto the object.
+            attempt_start = attempt_start - backtrack * direction
+            self.moveAxis('Z', safe_z)  # lift to the approach height before travelling
+            self.moveAxis(axis, attempt_start)
+            logging.warning("scanForStairFine: no edge found; retry %s of %s, "
+                            "restarting %s mm back along %s at %s.",
+                            attempt + 1, max_retries, backtrack, axis, attempt_start)
+
+        raise CalibrationScanError(
+            "No edge found along %s after %s attempts, scanning %s mm each and shifting "
+            "%s mm between attempts. The rack is not where its stored centre says it is; "
+            "correct the centre before calibrating again."
+            % (axis, max_retries + 1, max_travel, backtrack))
         
     
     # TODO: remove this function
@@ -2236,6 +2379,30 @@ class rack(data):
         y_cntr_abs = y - dist_between_rows * row + y_well_0_rel
         
         self.setCenterXY(x=x_cntr_abs, y=y_cntr_abs)
+
+    def setCenterOffsetFromReference(self, dx, dy, reference_rack='samples'):
+        """
+        Records the fixed mechanical offset from another rack's centre to this
+        one's, as (this_center - reference_center).
+
+        Used by robot.seedRackCenterFromReference() to put this rack's stored
+        centre back in the right place once the reference rack has been
+        calibrated, so that an edge scan cannot start off the rack.
+        """
+        self._setSetting('center_offset_from_reference', [dx, dy])
+        self._setSetting('center_offset_reference_rack', reference_rack)
+
+    def getCenterOffsetFromReference(self):
+        """
+        Returns (dx, dy, reference_rack_name), or (None, None, None) if this rack
+        has no offset recorded.
+        """
+        offset = self._getSetting('center_offset_from_reference')
+        reference_rack = self._getSetting('center_offset_reference_rack')
+        if offset is None or reference_rack is None:
+            return None, None, None
+        return offset[0], offset[1], reference_rack
+
 
     def setCalibrationLiftZ(self, z):
         """
