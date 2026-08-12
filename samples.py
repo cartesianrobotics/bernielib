@@ -106,7 +106,35 @@ class sample_type(data):
         vols_list = [float(x) for x in depth_to_vol_dict.keys()]
         max_vol = max(vols_list)
         return max_vol
-    
+
+
+    def setLiquidDispenseVolLevel(self, volume_level):
+        """
+        Sets the volume level at which the robot inserts the tip when dispensing into
+        this type of tube. A lower level is deeper into the tube, so dispensing happens
+        closer to whatever is already in it.
+        """
+        self._setSetting('liquid_dispense_vol_level', volume_level)
+
+    def getLiquidDispenseVolLevel(self):
+        """
+        Returns the dispense level for this tube type, or None when it has none.
+
+        None is a normal answer, not an error: no tube type shipped today carries this
+        setting, and dispenseLiquid() falls back to its original calculation when it
+        gets None. Presence is checked with _settingPresent() rather than reading and
+        testing the result, because _getSetting() logs three error lines for a missing
+        key and this is called on every single dispense.
+
+        _settingPresent() looks only at the tube's own settings, so a value that existed
+        solely in factory_default would read as absent. Nothing defines it there, and
+        the fallback is the previous behaviour either way.
+        """
+        if self._settingPresent('liquid_dispense_vol_level'):
+            return self._getSetting('liquid_dispense_vol_level')
+        return None
+
+
     def setExtraImmersionVol(self, volume):
         """
         When uptaking the liquid from the sample, one shall insert the pipette deeper that 

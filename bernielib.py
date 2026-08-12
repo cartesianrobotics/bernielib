@@ -988,8 +988,8 @@ class robot(data):
         return True
 
     
-    def dispenseLiquid(self, sample, volume, extra_vol_insert=100, in_place=False, plunger_retract=True, 
-                       blow_extra=False, move_up_after=True):
+    def dispenseLiquid(self, sample, volume, extra_vol_insert=100, in_place=False, plunger_retract=True,
+                       blow_extra=False, move_up_after=True, calc_insert_vol_as='settings'):
         """
         Dispenses liquid from pipettor into specified sample
         Inputs
@@ -1011,12 +1011,38 @@ class robot(data):
                 liquid in the tip
             move_up_after
                 If true, robot will move up to the top of the tube after pipetting
+            calc_insert_vol_as
+                How to decide the volume level at which the tip is inserted.
+                    'settings' - take it from the tube type, where it is set with
+                                 sample_type.setLiquidDispenseVolLevel(). Falls back to
+                                 the 'maxvol' calculation when the tube type carries no
+                                 such level, which is the case for every tube type
+                                 shipped today.
+                    'maxvol'   - maximum volume of the tube less extra_vol_insert. This
+                                 is what the robot always did before the setting existed.
+                A LOWER volume level means a DEEPER insertion, so lowering it dispenses
+                closer to the liquid already in the tube. Dispensing from too high was a
+                documented customer complaint (see general_todo.txt).
         """
-        
+
         pipetting_delay = self.getPipetteDelay(sample=sample)
-        # Moving pipette further into the sample
-        # TODO: create sample type setting for that
-        z_in = sample.calcAbsLiquidLevelFromVol(sample.stype.getMaxVolume()-extra_vol_insert, 
+        # Volume level at which to insert the tip into the tube.
+        if calc_insert_vol_as == 'settings':
+            vol_insert = sample.stype.getLiquidDispenseVolLevel()
+            if vol_insert is None:
+                # This tube type has no level recorded. Use the original calculation, so
+                # that adopting this parameter changes nothing until a level is actually
+                # set for a tube type.
+                vol_insert = sample.stype.getMaxVolume() - extra_vol_insert
+        elif calc_insert_vol_as == 'maxvol':
+            vol_insert = sample.stype.getMaxVolume() - extra_vol_insert
+        else:
+            # Deliberately loud. An unrecognised value used to fall through to the full
+            # tube volume, which is the shallowest possible insertion - the robot would
+            # quietly dispense from the very top, which is the fault being fixed here.
+            raise ValueError("calc_insert_vol_as must be 'settings' or 'maxvol', got %r"
+                             % (calc_insert_vol_as,))
+        z_in = sample.calcAbsLiquidLevelFromVol(vol_insert,
                                                 added_length=self._calcExtraLength())
         if not in_place:
             self.moveToSample(sample, z=z_in)
