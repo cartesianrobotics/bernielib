@@ -989,13 +989,53 @@ class robot(data):
         return True
 
     
+    def setDispenseInsertLevelDefault(self, mode, value):
+        """
+        Sets the machine-wide dispense insert level, used for any tube type that does not
+        record one of its own.
+
+        'z_above_liquid' is the mode this is for: its value is a real air gap, so one
+        number behaves the same in a 1.5 mL tube and a 25 mL one. A volume-denominated
+        default would not - 30 uL of headroom is a few millimetres in an eppendorf and a
+        fraction of one in a 25 mL tube.
+        """
+        if mode not in DISPENSE_INSERT_MODES:
+            raise ValueError("Unknown dispense insert mode %r. Known modes: %s"
+                             % (mode, ", ".join(sorted(DISPENSE_INSERT_MODES))))
+        self._setSetting('dispense_insert_level_default', [mode, value])
+
+    def getDispenseInsertLevelDefault(self):
+        """
+        Returns (mode, value) for the machine-wide default, or None when none is set.
+
+        None is normal: nothing sets this out of the box, and calcDispenseInsertZ() then
+        falls through to the original calculation. Presence is checked with
+        _settingPresent() because _getSetting() logs three error lines for a missing key
+        and this is read on every dispense.
+        """
+        if not self._settingPresent('dispense_insert_level_default'):
+            return None
+        stored = self._getSetting('dispense_insert_level_default')
+        return (stored[0], stored[1])
+
+
     def calcDispenseInsertZ(self, sample, volume, extra_vol_insert=100, insert_level=None):
         """
         Absolute Z at which the tip is placed to dispense into a sample.
 
-        insert_level is a (mode, value) pair, or None to take the pair recorded for the
-        tube type, or nothing at all - in which case the calculation the robot has always
-        used applies, so behaviour is unchanged until a level is deliberately set.
+        Four places are consulted, most specific first:
+
+            1. insert_level passed here, which overrides everything;
+            2. the pair recorded for the tube type, set with
+               sample_type.setDispenseInsertLevel();
+            3. the machine-wide default, set with setDispenseInsertLevelDefault();
+            4. failing all of those, maximum tube volume less extra_vol_insert - what
+               dispensing did before any of this existed, so behaviour is unchanged
+               until something is deliberately set.
+
+        Note what step 4 is NOT: it is volume based, so the height it produces varies
+        with the tube. It lands 4.40 mm below the rim of an eppendorf, 8.64 mm on a 5 mL
+        and 19.67 mm on a 25 mL. There has never been a fixed clearance here.
 
         Mode and value travel together on purpose. The value is microlitres under
         'vol_headroom' and millimetres under the others, so a bare number would be
@@ -1005,8 +1045,8 @@ class robot(data):
         if insert_level is None:
             insert_level = sample.stype.getDispenseInsertLevel()
         if insert_level is None:
-            # Nothing recorded anywhere: maximum tube volume less extra_vol_insert, which
-            # is what dispensing did before any of this existed.
+            insert_level = self.getDispenseInsertLevelDefault()
+        if insert_level is None:
             return sample.calcAbsLiquidLevelFromVol(
                 sample.stype.getMaxVolume() - extra_vol_insert,
                 added_length=self._calcExtraLength())
@@ -1030,6 +1070,24 @@ class robot(data):
                 v_final = v_max
             return sample.calcAbsLiquidLevelFromVol(v_final,
                                                     added_length=self._calcExtraLength())
+
+        if mode == 'z_above_liquid':
+            # Same idea as vol_headroom, but the clearance is a real air gap. One number
+            # therefore means the same thing whatever the tube, which is what makes it
+            # usable as a machine-wide default.
+            v_final = sample.getVolume() + volume
+            v_max = sample.stype.getMaxVolume()
+            if v_final > v_max:
+                v_final = v_max
+            z_liquid = sample.calcAbsLiquidLevelFromVol(
+                v_final, added_length=self._calcExtraLength())
+            z = z_liquid - value
+            z_rim = sample.getSampleTopAbsZ(added_length=self._calcExtraLength())
+            if z < z_rim:
+                # The gap would put the tip above the rim, i.e. out of the tube
+                # altogether. Sit at the rim instead.
+                z = z_rim
+            return z
 
         if mode == 'z_from_top':
             return sample.calcSampleAbsZFromZRelativeToTop(
@@ -1382,7 +1440,7 @@ class robot(data):
 
     def transferLiquid(self, source, destination, volume, lag_vol=5, dry_tube=False, v_immerse_dispense=100,
                        touch_wall=True, safe_z=50, ignore_calibration=False, dry_tube_extra_uptake_v=50,
-                       source_tube_radius=2, delay=0.5):
+                       source_tube_radius=2, delay=0.5, insert_level=None):
         """
         Transfer liquid from one source tube to the other destination tube.
         Extra air will be blown to the destination tube to ensure all the liquid from the tip gets to the tube.
@@ -1405,6 +1463,10 @@ class robot(data):
                 When pipetting, robot will touch wall of a destination tube to drop a remaining liquid.
             safe_z=50
                 When transferring, robot will lift Z axis to that absolute value.
+            insert_level
+                (mode, value) pair fixing how deep the tip goes when dispensing into the
+                destination. Overrides the tube type and the machine default; see
+                calcDispenseInsertZ(). None leaves that chain to decide.
         """
         # Generating list of volumes. Entire volume may be impossible to transfer one time
         v_list = []
@@ -1419,7 +1481,8 @@ class robot(data):
             self.move(z=safe_z)
             self.uptakeLiquid(source, v, lag_vol=lag_vol, dry_tube=dry_tube, ignore_calibration=ignore_calibration)
             self.move(z=safe_z)
-            self.dispenseLiquid(destination, v, extra_vol_insert=v_immerse_dispense, blow_extra=True)
+            self.dispenseLiquid(destination, v, extra_vol_insert=v_immerse_dispense,
+                                blow_extra=True, insert_level=insert_level)
             if touch_wall:
                 self.touchWall(destination)
         
@@ -1430,7 +1493,8 @@ class robot(data):
                                  ignore_calibration=ignore_calibration, R=source_tube_radius, T=delay)
             self.move(z=safe_z)
             v_in_tip = v_remain + dry_tube_extra_uptake_v
-            self.dispenseLiquid(destination, v_in_tip, extra_vol_insert=v_immerse_dispense, blow_extra=True)
+            self.dispenseLiquid(destination, v_in_tip, extra_vol_insert=v_immerse_dispense,
+                                blow_extra=True, insert_level=insert_level)
             if touch_wall:
                 self.touchWall(destination)
 

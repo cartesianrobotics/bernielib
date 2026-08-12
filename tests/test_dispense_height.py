@@ -34,7 +34,8 @@ TUBE_TYPE = 'eppendorf'
 EXTRA_VOL_INSERT = 100
 
 
-class dispense_height_test_case(unittest.TestCase):
+class dispense_test_base(unittest.TestCase):
+    """Fixture shared by the cases below. Deliberately carries no tests itself."""
 
     def setUp(self):
         logging.disable(logging.CRITICAL)
@@ -69,6 +70,9 @@ class dispense_height_test_case(unittest.TestCase):
         return self.sample.calcAbsLiquidLevelFromVol(
             volume_level, added_length=self.ber._calcExtraLength())
 
+
+class dispense_height_test_case(dispense_test_base):
+    """The insert height itself, and the fallback that keeps it unchanged."""
 
     # ------------------------------------------------------------------
     # Nothing changes until a level is set
@@ -260,3 +264,143 @@ class dispense_height_test_case(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class dispense_default_and_gap_test_case(dispense_test_base):
+    """
+    The machine-wide default, and the millimetre-based clearance mode it exists for.
+
+    A volume-denominated default cannot work across tube sizes: 30 uL of headroom is a
+    few millimetres in an eppendorf and a fraction of one in a 25 mL tube.
+    'z_above_liquid' is specified as a real air gap, so one number behaves the same
+    everywhere, which is what makes it usable as a default.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.ber.data.pop('dispense_insert_level_default', None)
+
+
+    # ------------------------------------------------------------------
+    # z_above_liquid
+    # ------------------------------------------------------------------
+
+    def test_zAboveLiquidSitsTheGapAboveTheFinalLevel(self):
+        self.sample.setVolume(100)
+        z_liquid = self.zForVolume(150)     # 100 already in, 50 going in
+
+        z = self.insertZ(volume=50, insert_level=('z_above_liquid', 5))
+
+        self.assertAlmostEqual(z, z_liquid - 5, places=6)
+
+    def test_zAboveLiquidTracksTheFillLevel(self):
+        self.sample.setVolume(100)
+        low = self.insertZ(volume=50, insert_level=('z_above_liquid', 5))
+        self.sample.setVolume(1000)
+        high = self.insertZ(volume=50, insert_level=('z_above_liquid', 5))
+
+        self.assertLess(high, low, "a fuller tube should be dispensed into higher up")
+
+    def test_zAboveLiquidCountsTheVolumeBeingDispensed(self):
+        self.sample.setVolume(100)
+        small = self.insertZ(volume=10, insert_level=('z_above_liquid', 5))
+        large = self.insertZ(volume=800, insert_level=('z_above_liquid', 5))
+
+        self.assertLess(large, small)
+
+    def test_zAboveLiquidGapIsInMillimetres(self):
+        """The gap is a real distance, so doubling it moves the tip exactly twice as far."""
+        self.sample.setVolume(100)
+        near = self.insertZ(volume=50, insert_level=('z_above_liquid', 5))
+        far = self.insertZ(volume=50, insert_level=('z_above_liquid', 10))
+
+        self.assertAlmostEqual(near - far, 5.0, places=6)
+
+    def test_zAboveLiquidStopsAtTheRim(self):
+        """A gap larger than the tube is deep would otherwise put the tip outside it."""
+        self.sample.setVolume(1600)
+        rim = self.sample.getSampleTopAbsZ(added_length=self.ber._calcExtraLength())
+
+        z = self.insertZ(volume=50, insert_level=('z_above_liquid', 500))
+
+        self.assertAlmostEqual(z, rim, places=6)
+
+    def test_theSameGapMeansTheSameDistanceInAnyTube(self):
+        """
+        The property that makes this a sane default, and that vol_headroom lacks.
+        """
+        big = bl.createSample('25mL', 'big_tube', self.ber.reagents_rack, 0, 0, volume=1000)
+        big.stype.data.pop('dispense_insert_level', None)
+
+        for tube in (self.sample, big):
+            liquid = tube.calcAbsLiquidLevelFromVol(
+                tube.getVolume() + 50, added_length=self.ber._calcExtraLength())
+            z = self.ber.calcDispenseInsertZ(tube, 50, insert_level=('z_above_liquid', 5))
+            with self.subTest(tube=tube.stype.name):
+                self.assertAlmostEqual(liquid - z, 5.0, places=6)
+
+
+    # ------------------------------------------------------------------
+    # The machine-wide default, and the order of precedence
+    # ------------------------------------------------------------------
+
+    def test_noDefaultIsSetOutOfTheBox(self):
+        self.assertIsNone(self.ber.getDispenseInsertLevelDefault())
+
+    def test_defaultRoundTrips(self):
+        self.ber.setDispenseInsertLevelDefault('z_above_liquid', 5)
+
+        self.assertEqual(self.ber.getDispenseInsertLevelDefault(), ('z_above_liquid', 5))
+
+    def test_defaultAppliesWhenTheTubeTypeHasNone(self):
+        self.sample.setVolume(100)
+        self.ber.setDispenseInsertLevelDefault('z_above_liquid', 5)
+        expected = self.zForVolume(150) - 5
+
+        self.assertAlmostEqual(self.insertZ(volume=50), expected, places=6)
+
+    def test_theTubeTypeBeatsTheDefault(self):
+        self.sample.setVolume(100)
+        self.ber.setDispenseInsertLevelDefault('z_above_liquid', 5)
+        self.sample.stype.setDispenseInsertLevel('vol_headroom', 30)
+
+        self.assertAlmostEqual(self.insertZ(volume=50), self.zForVolume(180), places=6)
+
+    def test_anExplicitArgumentBeatsBoth(self):
+        self.ber.setDispenseInsertLevelDefault('z_above_liquid', 5)
+        self.sample.stype.setDispenseInsertLevel('vol_headroom', 30)
+        expected = self.sample.calcSampleAbsZFromZRelativeToTop(
+            8, added_length=self.ber._calcExtraLength())
+
+        self.assertAlmostEqual(self.insertZ(insert_level=('z_from_top', 8)),
+                               expected, places=6)
+
+    def test_theOldFallbackStillAppliesWhenNothingIsSet(self):
+        expected = self.zForVolume(self.sample.stype.getMaxVolume() - EXTRA_VOL_INSERT)
+
+        self.assertAlmostEqual(self.insertZ(), expected, places=6)
+
+    def test_anUnknownModeCannotBeStoredAsTheDefault(self):
+        with self.assertRaises(ValueError):
+            self.ber.setDispenseInsertLevelDefault('z_above_the_liquid', 5)
+
+
+class transfer_liquid_passthrough_test_case(dispense_test_base):
+    """transferLiquid is how purify.py dispenses, so the argument has to reach it."""
+
+    def test_transferLiquidPassesTheLevelThrough(self):
+        destination = bl.createSample(TUBE_TYPE, 'dest', self.ber.samples_rack, 1, 1,
+                                      volume=100)
+        destination.stype.data.pop('dispense_insert_level', None)
+        with patch.object(bl.robot, 'dispenseLiquid') as dispense, \
+             patch.object(bl.robot, 'uptakeLiquid'), \
+             patch.object(bl.robot, 'move'), \
+             patch.object(bl.robot, 'moveToSample'), \
+             patch.object(bl.robot, 'touchWall'), \
+             patch.object(bl.robot, 'movePipetteToVolume'):
+            self.ber.transferLiquid(self.sample, destination, 50,
+                                    insert_level=('z_above_liquid', 5))
+
+        self.assertTrue(dispense.called, "transferLiquid did not dispense")
+        for call in dispense.call_args_list:
+            self.assertEqual(call[1].get('insert_level'), ('z_above_liquid', 5))

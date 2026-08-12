@@ -12,8 +12,14 @@ from general import data
 DISPENSE_INSERT_MODES = {
     'vol_headroom':
         "uL of clearance above the level the liquid will reach once this dispense "
-        "finishes. Self-adjusting: the tip rises as the tube fills. The sensible "
-        "default, and the only mode where one number suits a tube however full it is.",
+        "finishes. Self-adjusting: the tip rises as the tube fills. Suits a per-tube-type "
+        "setting, because for one tube a volume always maps to the same height and is "
+        "the easier quantity to reason about.",
+    'z_above_liquid':
+        "mm of clearance above the level the liquid will reach once this dispense "
+        "finishes. Also self-adjusting, but specified as a real air gap rather than a "
+        "volume, so one number means the same thing in a 1.5 mL tube and a 25 mL one. "
+        "Suits a machine-wide default for that reason.",
     'z_from_top':
         "mm below the top rim of the tube. Fixed regardless of contents.",
     'z_from_bottom':
