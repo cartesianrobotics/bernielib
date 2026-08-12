@@ -5,6 +5,24 @@ import os
 from general import data
 
 
+# How dispenseLiquid() decides where to put the tip. The value accompanying each mode
+# is in different units, which is why a mode and its value are always stored and passed
+# as one pair - a bare number would be microlitres under one mode and millimetres under
+# another, with nothing to catch the mix-up.
+DISPENSE_INSERT_MODES = {
+    'vol_headroom':
+        "uL of clearance above the level the liquid will reach once this dispense "
+        "finishes. Self-adjusting: the tip rises as the tube fills. The sensible "
+        "default, and the only mode where one number suits a tube however full it is.",
+    'z_from_top':
+        "mm below the top rim of the tube. Fixed regardless of contents.",
+    'z_from_bottom':
+        "mm above the calibrated tube bottom. The most accurate reference available, "
+        "because the bottom is measured by touching it rather than inferred - but it "
+        "requires that the bottom has been calibrated for this tube.",
+}
+
+
 class sample_type(data):
     """
     Class handling sample types
@@ -108,31 +126,38 @@ class sample_type(data):
         return max_vol
 
 
-    def setLiquidDispenseVolLevel(self, volume_level):
+    def setDispenseInsertLevel(self, mode, value):
         """
-        Sets the volume level at which the robot inserts the tip when dispensing into
-        this type of tube. A lower level is deeper into the tube, so dispensing happens
-        closer to whatever is already in it.
-        """
-        self._setSetting('liquid_dispense_vol_level', volume_level)
+        Sets how deep the tip goes when dispensing into this type of tube.
 
-    def getLiquidDispenseVolLevel(self):
+        Mode and value are stored together and are meaningless apart: the same number
+        is microlitres under 'vol_headroom' and millimetres under the others. See
+        DISPENSE_INSERT_MODES for what each one measures.
         """
-        Returns the dispense level for this tube type, or None when it has none.
+        if mode not in DISPENSE_INSERT_MODES:
+            raise ValueError("Unknown dispense insert mode %r. Known modes: %s"
+                             % (mode, ", ".join(sorted(DISPENSE_INSERT_MODES))))
+        self._setSetting('dispense_insert_level', [mode, value])
+
+    def getDispenseInsertLevel(self):
+        """
+        Returns (mode, value) for this tube type, or None when it has none.
 
         None is a normal answer, not an error: no tube type shipped today carries this
-        setting, and dispenseLiquid() falls back to its original calculation when it
-        gets None. Presence is checked with _settingPresent() rather than reading and
-        testing the result, because _getSetting() logs three error lines for a missing
-        key and this is called on every single dispense.
+        setting, and dispenseLiquid() falls back to the calculation the robot has always
+        used when it gets None. Presence is checked with _settingPresent() rather than
+        reading and testing the result, because _getSetting() logs three error lines for
+        a missing key and this is read on every single dispense.
 
         _settingPresent() looks only at the tube's own settings, so a value that existed
         solely in factory_default would read as absent. Nothing defines it there, and
         the fallback is the previous behaviour either way.
         """
-        if self._settingPresent('liquid_dispense_vol_level'):
-            return self._getSetting('liquid_dispense_vol_level')
-        return None
+        if not self._settingPresent('dispense_insert_level'):
+            return None
+        stored = self._getSetting('dispense_insert_level')
+        # JSON has no tuples; it comes back as a list.
+        return (stored[0], stored[1])
 
 
     def setExtraImmersionVol(self, volume):
