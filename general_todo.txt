@@ -1,5 +1,95 @@
 General TODO.
 
+- Customer requests from Roche/DELT, never actioned.
+  Source: "20220112 Bernie Magnetic Beads Purification Feedback.pptx", Felix
+  Gruber and Quentin Strebel on behalf of the DELT team, 12 Jan 2022, written
+  after ten purification runs. Held in the business archive under
+  Robot_Arnie_Bernie/Bernie/Customer_Runs/20220118_01/, together with the
+  samplesheet and logs they attached.
+
+  None of it reached this repository: the last commit before the 2026 revival
+  is 2021-12-20, three weeks before the feedback was written. Two items from
+  their list are left out below - the bead aspiration speed, which was a
+  question about the right value rather than a request, and the ethanol not
+  being fully removed in 2 of 10 runs, which they solved themselves by editing
+  eppendorf.json and which is to be judged visually during testing.
+
+  1. Beads dispensed to the wrong tube. Samples declared at positions 1 and 2
+     had their beads dispensed to position 0. Their words: "What is wrong?"
+
+     Root cause, confirmed by reading: positionsToPurify() returns the real
+     samplesheet positions, e.g. [1, 2], but _returnSampleParameterList()
+     returns a dense list indexed 0..n-1. initSamples() (purify.py:355) then
+     calls createSamplesToPurifyList() without position_list, so it falls back
+     to start_from_position=0 and regenerates positions as [0, 1]. The real
+     positions are discarded and replaced by list indices.
+
+     The fix material is already there: positions_to_purify_list is computed at
+     purify.py:139 and never used for this, and createSamplesToPurifyList()
+     already accepts position_list.
+
+     The same confusion appears a second time and is not in their report.
+     Line 315 iterates real positions into _getBeadsVolume(), which reaches
+     initial_sample_vol_list[position] - the dense list indexed by a real
+     position. With samples at positions 1 and 2 that is an IndexError on a
+     two-element list. Roche never hit it because they supplied "Beads volume"
+     directly, which takes another path; the "Fraction" path with offset
+     positions would crash. Note positionsToPurify2ndStage() uses real
+     positions, so the first and second stages disagree on what a position is.
+
+     Worth a unit test over non-contiguous layouts ([1,2], [0,5], [7,8]); no
+     hardware needed. Their samplesheet_Delt_2_Pos1-2 makes a ready fixture.
+
+  2. Delay after aspiration lands at the wrong moment. They asked for 3-5 s
+     with the tip still in the liquid, immediately after aspiration, so the
+     full volume is drawn. What they observed was the delay they set in the csv
+     taking effect "after the whole pipetting step".
+
+     Read the code before changing it: time.sleep(pipetting_delay) currently
+     does sit right after the plunger reaches zero, tip still immersed. So
+     either this was fixed between their run and 2021-12-20, or the cause is
+     elsewhere. One candidate worth testing: writeAndWaitCartesian gives up
+     after 5 s, so a move that has not physically finished when the sleep
+     starts would produce exactly this symptom. Check their attached log first.
+
+  3. Dispense height too high.
+
+     Partly built already, but never committed. The archived working copy of
+     bernielib.py, dated 2022-05-02 - after the feedback - carries
+     setLiquidDispenseVolLevel / getLiquidDispenseVolLevel and
+     dispenseLiquid(calc_insert_vol_as='settings'|'maxvol'), none of which
+     exist here. purify.py in that same copy is byte-identical to this one, so
+     it was never wired up. Recover that work before rewriting it. Today every
+     call site passes the hardcoded extra_vol_insert=100.
+
+  4. Tip touch. Touch the tip to the tube wall after dispensing so the hanging
+     droplet is released.
+
+     touchWall() exists and transferLiquid(touch_wall=True) defaults on, but
+     purify.py passes touch_wall=False for beads, ethanol and eluent - every
+     step they cared about. Wanted as a per-reagent samplesheet parameter
+     rather than a hardcoded False.
+
+  5. Pause/break during a run. Genuinely absent: no pause or resume anywhere in
+     purify.py or bernielib.py. Pausing between protocol steps is simple and
+     safe; mid-step is much harder. Between steps is probably enough.
+
+  6. Timing does not match the samplesheet, and one step is mislabelled.
+     Drying time set to 3 min in the csv was not 3 min in the run, and the
+     slide notes the step reads as "incubation" where it should say "drying".
+
+  7. Incubation timer starts at the wrong event. It currently starts when the
+     beads are added; they argue it should start after mixing completes,
+     otherwise every incubation is short by the mixing duration. Changing this
+     alters protocol results, so record before/after.
+
+  Also worth knowing when picking this up: the revival project's technical
+  backlog lists "implement Roche's request: adjustable pipetting speed" as a
+  critical gate. That is already done - the four speed parameters in
+  factory_default/samplesheet.csv were added in October 2021, three months
+  before the feedback. Roche were asking whether 400 was the right value, not
+  for the feature.
+
 - Logging in the test notebooks looks wrong, and runs may not be recorded.
   Affected: 21121701_Bernie_Test.ipynb, jupyter_notebooks/21111801_Bernie_Test.ipynb,
   jupyter_notebooks/21112901_Bernie_Test.ipynb, jupyter_notebooks/21121701_Bernie_Test.ipynb
