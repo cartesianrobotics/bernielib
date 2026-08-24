@@ -3,6 +3,7 @@ import time
 import re
 import logging
 import threading
+import math
 
 # libraries for curve fitting. Used for pipette calibration and for beads volumes.
 import pandas as pd
@@ -838,7 +839,76 @@ class robot(data):
                             self.liquid_uptake_low_volume_bottom_offset, init_uptake_vol_position-3*vol_per_step)
         self._uptakeRemainingLiquidFromTheSide('Y', -R, T, self.liquid_uptake_low_volume_bottom_offset, 0)
 
-    
+
+    def uptakeLiquidSinglePosition(self, sample, volume, bottom_gap=None, delay=None):
+        """
+        Aspirate once at a fixed position just above the calibrated tube bottom.
+
+        Unlike uptakeLiquid()'s low-volume path, this method does not visit the
+        four sides of the tube or split the aspiration across multiple plunger
+        moves. It pre-positions the plunger, places the tip ``bottom_gap`` above
+        the bottom, and retracts the plunger to zero in one aspiration stroke.
+
+        If the sample bottom has not been measured, it is probed once before the
+        stroke and stored on the sample. Subsequent calls reuse that calibration.
+        This makes the method suitable for repeated wall washes where leaving a
+        small amount of liquid behind is intentional.
+        """
+        try:
+            volume_is_valid = math.isfinite(float(volume)) and float(volume) > 0
+        except (TypeError, ValueError):
+            volume_is_valid = False
+        if not volume_is_valid:
+            raise ValueError("Single-position uptake volume must be a positive finite number.")
+
+        available_volume = sample.getVolume()
+        try:
+            available_is_valid = math.isfinite(float(available_volume))
+        except (TypeError, ValueError):
+            available_is_valid = False
+        if not available_is_valid or float(volume) > float(available_volume):
+            raise ValueError("Cannot aspirate %s uL from a sample containing %s uL."
+                             % (volume, available_volume))
+
+        if bottom_gap is None:
+            bottom_gap = sample.stype.getLowVolTipBottomGap()
+        try:
+            gap_is_valid = math.isfinite(float(bottom_gap)) and float(bottom_gap) > 0
+        except (TypeError, ValueError):
+            gap_is_valid = False
+        if not gap_is_valid:
+            raise ValueError("Bottom gap must be a positive finite number.")
+
+        if delay is None:
+            delay = self.getPipetteDelay(sample=sample)
+        try:
+            delay_is_valid = math.isfinite(float(delay)) and float(delay) >= 0
+        except (TypeError, ValueError):
+            delay_is_valid = False
+        if not delay_is_valid:
+            raise ValueError("Pipetting delay must be a non-negative finite number.")
+
+        bottom_is_calibrated = sample._settingPresent('tube_bottom_z')
+
+        # This must happen while the tip is above the liquid. The caller is
+        # responsible for leaving the previous wall wash retracted at centre.
+        self.movePipetteToVolume(volume)
+
+        if bottom_is_calibrated:
+            z_bottom = sample.getZBottom()
+            self.moveToSample(sample, z=z_bottom - bottom_gap)
+        else:
+            # _probeTubeZBottom() leaves the tip touching the bottom. Lift only
+            # the requested gap; the plunger was already pre-positioned above.
+            z_bottom = self._probeTubeZBottom(sample)
+            self.moveAxis('Z', z_bottom - bottom_gap)
+
+        # The only aspiration stroke in this method.
+        self.movePipetteToVolume(0)
+        time.sleep(delay)
+        sample.setVolume(float(available_volume) - float(volume))
+
+
     def uptakeLiquid(self, sample, volume, v_insert_override=None, lag_vol=5, dry_tube=False, 
                      in_place=False, ignore_calibration=False):
         """
@@ -1697,7 +1767,63 @@ class robot(data):
             print (full_cmd)
             return
 
-    # TODO: this function must be able to move all axis simultaneously (x, y, z, a)
+
+    def moveCoordinated(self, x=None, y=None, z=None, a=None, speed=None,
+                        wait=True, poweroff_a=True):
+        """
+        Move any combination of X, Y, Z and pipette-plunger A in one linear move.
+
+        Every coordinate provided is put in the same Smoothieware ``G1`` block,
+        so the axes start and finish that block together.  This is the primitive
+        needed to dispense while the nozzle follows a path, rather than alternating
+        a carriage move and a separate plunger move.
+
+        Set ``wait=False`` for intermediate waypoints.  Smoothieware can then queue
+        consecutive blocks in its motion planner.  The final waypoint should use
+        the default ``wait=True`` so BernieLib sends ``M400`` and waits for the
+        complete path.  The A motor is powered down only after that final wait.
+
+        ``speed`` is the feed rate for the combined path.  If it is omitted, the
+        lowest configured speed among the axes in the block is used.  Supplying it
+        explicitly is recommended for liquid-handling paths because one feed rate
+        governs all axes in a coordinated move.
+        """
+        coordinates = [('X', x), ('Y', y), ('Z', z), ('A', a)]
+        coordinates = [(axis, value) for axis, value in coordinates if value is not None]
+        if not coordinates:
+            raise ValueError("A coordinated move needs at least one axis coordinate.")
+
+        for axis, value in coordinates:
+            try:
+                finite = math.isfinite(float(value))
+            except (TypeError, ValueError):
+                finite = False
+            if not finite:
+                raise ValueError("Coordinate %s must be a finite number, got %r." %
+                                 (axis, value))
+
+        if speed is None:
+            speed = min(self.getSpeed(axis) for axis, value in coordinates)
+        try:
+            valid_speed = math.isfinite(float(speed)) and float(speed) > 0
+        except (TypeError, ValueError):
+            valid_speed = False
+        if not valid_speed:
+            raise ValueError("Coordinated-move speed must be a positive finite number, got %r."
+                             % (speed,))
+
+        axis_words = ['%s%s' % (axis, value) for axis, value in coordinates]
+        full_cmd = 'G1 ' + ' '.join(axis_words) + ' F' + str(speed)
+        self.writeAndWaitCartesian(full_cmd)
+
+        if wait:
+            self.writeAndWaitCartesian('M400')
+            if a is not None and poweroff_a:
+                self.powerStepperOff('A')
+
+
+    # This higher-level helper deliberately preserves its serialized, collision-safe
+    # ordering. Use moveCoordinated() when a path specifically needs simultaneous axes.
     def move(self, x=None, y=None, z=None, z_first=True, speed_xy=None, speed_z=None):
         """
         Move robot to a new position with given absolute coordinates.

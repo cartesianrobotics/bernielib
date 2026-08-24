@@ -1,0 +1,56 @@
+Settings snapshot: C:\Users\sergi\OneDrive\Bernie\experiments\20260823_coordinated_wall_wash\configs\20260824_003743
+Code snapshot:     C:\Users\sergi\OneDrive\Bernie\experiments\20260823_coordinated_wall_wash\scripts\snapshots\20260824_003743
+Connecting (BernieLib will scan serial ports)...
+
+--- Establishing absolute coordinates: home ---
+
+--- Picking up the next available tip ---
+  picked software-inventory tip [0, 2]
+
+--- Raising an additional 30 mm for 25 mL bottle clearance ---
+
+--- Transferring 30 uL yellow liquid: reagent position 2 -> tube 0 ---
+
+--- Tapered wall wash 1 of 3: one 20 uL aspiration, dispense down ---
+  approach: rise at centre to Z=123.000, then move sideways to X=160.870
+  wash: three queued downward G1 XYZ/A blocks
+  1: X=160.870 Y=20.100 Z=127.000 A=1.169 (6.7 uL)
+  2: X=160.241 Y=20.100 Z=131.000 A=1.993 (13.3 uL)
+  3: X=159.612 Y=20.100 Z=135.000 A=2.817 (20.0 uL) then M400
+  wash 1 aspiration-start to final-dispense: 8.763 s
+
+--- Tapered wall wash 2 of 3: one 20 uL aspiration, dispense down ---
+  approach: rise at centre to Z=123.000, then move sideways to X=160.870
+  wash: three queued downward G1 XYZ/A blocks
+  1: X=160.870 Y=20.100 Z=127.000 A=1.169 (6.7 uL)
+  2: X=160.241 Y=20.100 Z=131.000 A=1.993 (13.3 uL)
+  3: X=159.612 Y=20.100 Z=135.000 A=2.817 (20.0 uL) then M400
+  wash 2 aspiration-start to final-dispense: 1.835 s
+
+--- Tapered wall wash 3 of 3: one 20 uL aspiration, dispense down ---
+  approach: rise at centre to Z=123.000, then move sideways to X=160.870
+  wash: three queued downward G1 XYZ/A blocks
+  1: X=160.870 Y=20.100 Z=127.000 A=1.169 (6.7 uL)
+  2: X=160.241 Y=20.100 Z=131.000 A=1.993 (13.3 uL)
+  3: X=159.612 Y=20.100 Z=135.000 A=2.817 (20.0 uL) then M400
+  wash 3 aspiration-start to final-dispense: 1.837 s
+
+--- Wall-wash timing ---
+  first aspiration start -> last dispense: 12.796 s
+  individual washes: 8.763, 1.835, 1.837 s
+  mean per wash: 4.145 s
+
+--- Removing all liquid: tube 0 -> liquid waste at reagent position 1 ---
+
+--- Retreating to global safe Z after liquid-waste dispense ---
+
+--- Dropping the tip into tip waste ---
+
+--- Final home ---
+WARNING:root:Timeout for _readUntilMatch function.
+WARNING:root:Message returned from the robot: 
+WARNING:root:Waited 5.000004529953003 seconds
+Timing data:      C:\Users\sergi\OneDrive\Bernie\experiments\20260823_coordinated_wall_wash\data\wall_wash_timings_20260824_003743.json
+
+Experiment sequence completed.
+Ports closed.

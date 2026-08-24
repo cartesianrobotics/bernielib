@@ -1,0 +1,45 @@
+Settings snapshot: C:\Users\sergi\OneDrive\Bernie\experiments\20260823_coordinated_wall_wash\configs\20260824_000943
+Code snapshot:     C:\Users\sergi\OneDrive\Bernie\experiments\20260823_coordinated_wall_wash\scripts\snapshots\20260824_000943
+Connecting (BernieLib will scan serial ports)...
+
+--- Establishing absolute coordinates: home ---
+
+--- Picking up the next available tip ---
+  picked software-inventory tip [0, 1]
+
+--- Raising an additional 30 mm for 25 mL bottle clearance ---
+
+--- Transferring 30 uL yellow liquid: reagent position 2 -> tube 0 ---
+
+--- Tapered wall wash 1 of 3: aspirate, approach high, dispense down ---
+  approach: rise at centre to Z=123.000, then move sideways to X=160.870
+  wash: three queued downward G1 XYZ/A blocks
+  1: X=160.870 Y=20.100 Z=127.000 A=1.581 (10.0 uL)
+  2: X=160.241 Y=20.100 Z=131.000 A=2.817 (20.0 uL)
+  3: X=159.612 Y=20.100 Z=135.000 A=4.052 (30.0 uL) then M400
+
+--- Tapered wall wash 2 of 3: aspirate, approach high, dispense down ---
+  approach: rise at centre to Z=123.000, then move sideways to X=160.870
+  wash: three queued downward G1 XYZ/A blocks
+  1: X=160.870 Y=20.100 Z=127.000 A=1.581 (10.0 uL)
+  2: X=160.241 Y=20.100 Z=131.000 A=2.817 (20.0 uL)
+  3: X=159.612 Y=20.100 Z=135.000 A=4.052 (30.0 uL) then M400
+
+--- Tapered wall wash 3 of 3: aspirate, approach high, dispense down ---
+  approach: rise at centre to Z=123.000, then move sideways to X=160.870
+  wash: three queued downward G1 XYZ/A blocks
+  1: X=160.870 Y=20.100 Z=127.000 A=1.581 (10.0 uL)
+  2: X=160.241 Y=20.100 Z=131.000 A=2.817 (20.0 uL)
+  3: X=159.612 Y=20.100 Z=135.000 A=4.052 (30.0 uL) then M400
+
+--- Removing all liquid: tube 0 -> liquid waste at reagent position 1 ---
+
+--- Dropping the tip into tip waste ---
+
+--- Final home ---
+WARNING:root:Timeout for _readUntilMatch function.
+WARNING:root:Message returned from the robot: 
+WARNING:root:Waited 5.000004291534424 seconds
+
+Experiment sequence completed.
+Ports closed.

@@ -1,0 +1,26 @@
+Settings snapshot: C:\Users\sergi\OneDrive\Bernie\experiments\20260823_coordinated_wall_wash\configs\20260823_234252
+Code snapshot:     C:\Users\sergi\OneDrive\Bernie\experiments\20260823_coordinated_wall_wash\scripts\snapshots\20260823_234252
+Connecting (BernieLib will scan serial ports)...
+
+--- Establishing absolute coordinates: home ---
+
+--- Picking up the next available tip ---
+  picked software-inventory tip [0, 0]
+
+--- Aspirating 30 uL from sample position 0 ---
+
+--- Coordinated wall wash: four queued G1 XYZ/A blocks ---
+  1: X=160.870 Y=20.100 Z=123.000 A=1.272 (7.5 uL)
+  2: X=160.870 Y=20.100 Z=127.000 A=2.199 (15.0 uL)
+  3: X=160.241 Y=20.100 Z=131.000 A=3.125 (22.5 uL)
+  4: X=159.612 Y=20.100 Z=135.000 A=4.052 (30.0 uL) then M400
+
+--- Dropping the tip into tip waste ---
+
+--- Final home ---
+WARNING:root:Timeout for _readUntilMatch function.
+WARNING:root:Message returned from the robot: 
+WARNING:root:Waited 5.00000524520874 seconds
+
+Experiment sequence completed.
+Ports closed.

@@ -1,0 +1,10 @@
+{
+  "aspiration_volume_uL": 20.0,
+  "first_aspiration_to_last_dispense_seconds": 12.79558839998208,
+  "mean_wash_duration_seconds": 4.14501339996544,
+  "wash_durations_seconds": [
+    8.763082999968901,
+    1.8351981998421252,
+    1.8367590000852942
+  ]
+}

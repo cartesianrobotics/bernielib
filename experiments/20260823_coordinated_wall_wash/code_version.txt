@@ -1,0 +1,82 @@
+Prepared and physically run 2026-08-23.
+Run 1 input snapshot ID: 20260823_234252
+Revision 2 prepared from operator feedback after run 1 and physically run 2026-08-24.
+Run 2 input snapshot ID: 20260824_000943
+Revision 3 prepared from operator feedback after run 2 and physically run 2026-08-24.
+Run 3 input snapshot ID: 20260824_003743
+Revision 3 adds single-position 20 uL uptake, safe-Z retreat after liquid waste,
+and monotonic per-wash/overall timing.
+The immutable run 1 implementation remains in scripts/snapshots/20260823_234252/.
+
+Git commit: afec2dc0c265c3b97fa2cb35a8995d2c7d970e56
+Branch: hardware-bringup
+
+Changes that can affect this experiment
+---------------------------------------
+M  bernielib.py
+   Adds moveCoordinated() and revision 3's uptakeLiquidSinglePosition(). This affects the run.
+M  tests/test_bernielib.py
+   Mock-only tests for moveCoordinated(); cannot affect a hardware run.
+?? tests/test_coordinated_wall_wash_experiment.py
+   Mock-only tests for the experiment path and safety gate; cannot affect a hardware run.
+?? experiments/20260823_coordinated_wall_wash/
+   This prepared experiment, including its gated physical script. This affects the run.
+M  purify.py
+   Pre-existing user change. It is intentionally untouched and is not imported by the
+   experiment script, so it cannot affect this run.
+
+Other pre-existing working-tree changes
+---------------------------------------
+These were already present and are unrelated to the coordinated-wall-wash script. None
+is imported by the script or its BernieLib/sample/general dependency chain.
+
+M  .gitignore
+M  CLAUDE.md
+M  DEVLOG.md
+M  README.md
+M  calibrate_tips_rack.py
+M  calibrate_tube_racks.py
+M  calibration_common.py
+M  factory_default/samplesheet.csv
+M  factory_default/samplesheet_2cleanups.csv
+M  factory_default/samplesheet_2stages.csv
+M  general_todo.txt
+M  physical_tests/README.md
+M  physical_tests/harness.py
+M  physical_tests/physical_experiment_side_edge_find.py
+M  physical_tests/physical_experiment_side_load.py
+M  tests/test_purify_one_cutoff.py
+
+The tree also contains pre-existing calibration-record moves and untracked calibration,
+experiment, physical-test, and water-samplesheet records. They are records/tools rather
+than runtime imports and cannot affect this run:
+
+R  calibration_backup_20260807_2114/* -> calibrations/20260807_2114_deck/before/*
+R  calibration_reports/20260808_000528_* -> calibrations/20260808_000528_tube_racks/*
+R  calibration_reports/20260808_002756_* -> calibrations/20260808_002756_tips_rack/*
+R  experiment_reports/* -> experiments/20260808_side_edge_finding/*
+?? calibrations/20260808_000528_tube_racks/before/
+?? calibrations/20260808_002756_tips_rack/before/
+?? calibrations/20260811_170956_tips_rack/
+?? calibrations/20260811_171143_tips_rack/
+?? calibrations/20260811_232142_tube_types/
+?? calibrations/README.md
+?? experiments/20260808_side_edge_finding/{code_version.txt,configs/,scripts/}
+?? experiments/20260818_water_purification/
+?? experiments/20260819_plunger_travel/
+?? experiments/20260819_tip_center_probing/
+?? experiments/README.md
+?? physical_tests/physical_test_plunger_travel.py
+?? physical_tests/physical_test_tip_pickup.py
+?? samplesheet_water_test.csv
+
+Runtime settings
+----------------
+The repository-root JSON settings are ignored by git. The gated script snapshots the
+settings files immediately before connecting. Run 1 settings are in
+configs/20260823_234252/ and the executed local modules are in
+scripts/snapshots/20260823_234252/. Revision 2 additionally reads 25mL.json for
+reagent positions 1 and 2. Its settings are in configs/20260824_000943/ and its
+executed local modules are in scripts/snapshots/20260824_000943/.
+Revision 3 settings are in configs/20260824_003743/ and its executed local
+modules are in scripts/snapshots/20260824_003743/.
